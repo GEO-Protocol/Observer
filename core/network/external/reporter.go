@@ -2,6 +2,7 @@ package external
 
 import (
 	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
@@ -61,5 +62,7 @@ func (r *Reporter) tempLoadPublicKey(obsNumber int) *ecdsa.PublicKey {
 
 	block, _ := pem.Decode([]byte(pemEncoded))
 	pkey, err := x509.ParseECPrivateKey(block.Bytes)
-	return &ecdsa.PublicKey{X: pkey.PublicKey.X, Y: pkey.PublicKey.Y}
+
+	pkey.Curve = elliptic.P521()
+	return &ecdsa.PublicKey{Curve: elliptic.P521(), X: pkey.PublicKey.X, Y: pkey.PublicKey.Y}
 }

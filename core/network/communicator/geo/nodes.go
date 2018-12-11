@@ -2,7 +2,7 @@ package geo
 
 import (
 	"fmt"
-	"geo-observers-blockchain/core/chain/geo"
+	"geo-observers-blockchain/core/geo"
 	"net"
 )
 

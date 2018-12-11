@@ -35,7 +35,7 @@ func (s *Signature) UnmarshalBinary(data []byte) error {
 // --------------------------------------------------------------------------------------------------------------------
 
 const (
-	SignaturesMaxCount = common.GEO_TransactionMaxParticipant
+	SignaturesMaxCount = common.GeoTransactionMaxParticipantsCount
 )
 
 type Signatures struct {

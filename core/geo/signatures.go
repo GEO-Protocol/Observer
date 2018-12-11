@@ -62,7 +62,7 @@ func (t *TransactionSignaturesList) UnmarshalBinary(data []byte) (err error) {
 
 //---------------------------------------------------------------------------------------------------------------------
 
-const TransactionSignaturesListsMaxCount = common.GEO_TransactionMaxParticipant
+const TransactionSignaturesListsMaxCount = common.GeoTransactionMaxParticipantsCount
 
 type TransactionSignaturesLists struct {
 	At []*TransactionSignaturesList

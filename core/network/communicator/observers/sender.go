@@ -3,8 +3,10 @@ package observers
 import (
 	"fmt"
 	"geo-observers-blockchain/core/chain"
-	"geo-observers-blockchain/core/chain/geo"
+	"geo-observers-blockchain/core/common"
+	"geo-observers-blockchain/core/geo"
 	"geo-observers-blockchain/core/network/external"
+	"geo-observers-blockchain/core/network/messages"
 	"geo-observers-blockchain/core/settings"
 	"geo-observers-blockchain/core/utils"
 	log "github.com/sirupsen/logrus"
@@ -12,6 +14,7 @@ import (
 	"time"
 )
 
+// todo: move this to common errors
 var (
 	ErrEmptyData                     = utils.Error("sender", "invalid data set")
 	ErrCycleDataSending              = utils.Error("sender", "attempt to send the data to itself prevented")
@@ -19,17 +22,19 @@ var (
 	ErrInvalidSendingAttempt         = utils.Error("sender", "invalid data sending attempt")
 	ErrObserverConnectionRefused     = utils.Error("sender", "can't connect to remote observer")
 	ErrInvalidObserversConfiguration = utils.Error("sender", "can't connect to remote observer")
+	ErrInvalidObserverIndex          = utils.Error("sender", "invalid observer index")
 )
 
+// todo: encrypt traffic between observers
 type Sender struct {
 	Settings         *settings.Settings
 	ObserversConfRep *external.Reporter
 
-	OutgoingClaims        chan geo.Claim
-	OutgoingTSLs          chan geo.TransactionSignaturesList
-	OutgoingBlockProposal chan *chain.BlockProposal
-
-	connections *ConnectionsMap
+	OutgoingClaims           chan geo.Claim
+	OutgoingTSLs             chan geo.TransactionSignaturesList
+	OutgoingProposedBlocks   chan *chain.ProposedBlock
+	OutgoingBlocksSignatures chan *messages.SignatureMessage
+	connections              *ConnectionsMap
 }
 
 func NewSender(conf *settings.Settings, observersConfigurationReporter *external.Reporter) *Sender {
@@ -39,9 +44,10 @@ func NewSender(conf *settings.Settings, observersConfigurationReporter *external
 		Settings:         conf,
 		ObserversConfRep: observersConfigurationReporter,
 
-		OutgoingClaims:        make(chan geo.Claim, kChannelBufferSize),
-		OutgoingTSLs:          make(chan geo.TransactionSignaturesList, kChannelBufferSize),
-		OutgoingBlockProposal: make(chan *chain.BlockProposal, kChannelBufferSize),
+		OutgoingClaims:           make(chan geo.Claim, kChannelBufferSize),
+		OutgoingTSLs:             make(chan geo.TransactionSignaturesList, kChannelBufferSize),
+		OutgoingProposedBlocks:   make(chan *chain.ProposedBlock, kChannelBufferSize),
+		OutgoingBlocksSignatures: make(chan *messages.SignatureMessage, kChannelBufferSize),
 
 		connections: NewConnectionsMap(time.Minute * 10),
 	}
@@ -100,26 +106,6 @@ func (s *Sender) connectToObserver(o *external.Observer) (connection *Connection
 
 func (s *Sender) waitAndSendInfo(errors chan<- error) {
 
-	// todo: consider sending blocks as a stream: claim after claim with on the fly validation on the receivers part
-	// (defence from the invalid data sending )
-	processBlockProposalSending := func(block *chain.BlockProposal) {
-
-		// Observers list creation
-		// todo: crate function for observers selection
-		var observersIndexesList []uint16 = nil
-
-		data, err := block.MarshalBinary()
-		if err != nil {
-			errors <- utils.Wrap(ErrInvalidSendingAttempt, err.Error())
-			return
-		}
-
-		// Mark data as block proposal and send it.
-		data = append(StreamTypeBlockProposal, data...)
-
-		s.sendDataToObservers(data, observersIndexesList, errors)
-	}
-
 	processSending := func() {
 		select {
 		case claim := <-s.OutgoingClaims:
@@ -134,9 +120,16 @@ func (s *Sender) waitAndSendInfo(errors chan<- error) {
 				s.log().Info("TSL sent", tsl)
 			}
 
-		case blockProposal := <-s.OutgoingBlockProposal:
+		case proposedBlock := <-s.OutgoingProposedBlocks:
 			{
-				processBlockProposalSending(blockProposal)
+				s.processBlockProposalSending(proposedBlock, errors)
+				return
+			}
+
+		case blockSignature := <-s.OutgoingBlocksSignatures:
+			{
+				s.processBlockSignatureSending(blockSignature, errors)
+				return
 			}
 
 			// ...
@@ -149,6 +142,51 @@ func (s *Sender) waitAndSendInfo(errors chan<- error) {
 	}
 }
 
+// todo: consider sending blocks as a stream: claim after claim with on the fly validation on the receivers part
+// (defence from the invalid data sending )
+func (s *Sender) processBlockProposalSending(block *chain.ProposedBlock, errors chan<- error) {
+	if block == nil {
+		errors <- common.ErrNilParameter
+		return
+	}
+
+	data, err := block.MarshalBinary()
+	if err != nil {
+		errors <- utils.Wrap(ErrInvalidSendingAttempt, err.Error())
+		return
+	}
+
+	// Mark data as block proposal and send it.
+	data = append(StreamTypeBlockProposal, data...)
+
+	// todo: crate function for observers selection
+	s.sendDataToObservers(data, nil, errors)
+}
+
+func (s *Sender) processBlockSignatureSending(message *messages.SignatureMessage, errors chan<- error) {
+	if message == nil {
+		errors <- common.ErrNilParameter
+		return
+	}
+
+	data, err := message.MarshalBinary()
+	if err != nil {
+		errors <- utils.Wrap(ErrInvalidSendingAttempt, err.Error())
+		return
+	}
+
+	// todo: append block hash to have possibility to collect signatures
+	//  for various proposed blocks on the receiver's side.
+
+	// Mark data as block proposal and send it.
+	data = append(StreamTypeBlockSignature, data...)
+	s.sendDataToObservers(data, []uint16{message.AddresseeObserverIndex}, errors)
+}
+
+// Note: several errors might occur during data sending.
+// There are cases when sending should not be cancelled due to an error,
+// but the error itself must be reported.
+// For this cases, errors channel is propagated to the method.
 func (s *Sender) sendDataToObservers(data []byte, observersIndexes []uint16, errors chan<- error) {
 	if len(data) == 0 {
 		errors <- ErrEmptyData
@@ -184,9 +222,19 @@ func (s *Sender) sendDataToObservers(data []byte, observersIndexes []uint16, err
 		}
 
 	} else {
-		// Bytes must be sent to several observers only.
-		// todo: implement
-		panic("not implemented")
+		for _, index := range observersIndexes {
+			if len(observersConf.Observers) < int(index+1) {
+				errors <- ErrInvalidObserverIndex
+				continue
+			}
+
+			observer := observersConf.Observers[index]
+			err := s.sendDataToObserver(observer, data)
+			if err != nil {
+				errors <- err
+				continue
+			}
+		}
 	}
 }
 

@@ -29,6 +29,8 @@ func New(conf *settings.Settings) (core *Core, err error) {
 	}
 
 	reporter := external.NewReporter()
+	producer, err := chain.NewBlocksProducer(conf, reporter, k)
+
 	core = &Core{
 		Settings: conf,
 		Keystore: k,
@@ -37,8 +39,7 @@ func New(conf *settings.Settings) (core *Core, err error) {
 		ObserversSender:       observersNet.NewSender(conf, reporter),
 		ObserversReceiver:     observersNet.NewReceiver(),
 		GEONodesCommunicator:  geoNet.NewNodesCommunicator(),
-
-		BlocksProducer: chain.NewBlocksProducer(conf, reporter, k),
+		BlocksProducer:        producer,
 	}
 	return
 }
@@ -121,13 +122,23 @@ func (c *Core) dispatchDataFlows(errors chan error) {
 		// Outgoing data flow
 		case outgoingBlockProposed := <-c.BlocksProducer.OutgoingBlocksProposals:
 			{
-				c.ObserversSender.OutgoingBlockProposal <- outgoingBlockProposed
+				c.ObserversSender.OutgoingProposedBlocks <- outgoingBlockProposed
+			}
+
+		case outgoingBlockSignature := <-c.BlocksProducer.OutgoingBlocksSignatures:
+			{
+				c.ObserversSender.OutgoingBlocksSignatures <- outgoingBlockSignature
 			}
 
 		// Incoming data flow
 		case incomingProposedBlock := <-c.ObserversReceiver.BlocksProposed:
 			{
 				c.BlocksProducer.IncomingBlocksProposals <- incomingProposedBlock
+			}
+
+		case incomingBlockSignature := <-c.ObserversReceiver.BlockSignatures:
+			{
+				c.BlocksProducer.IncomingBlocksSignatures <- incomingBlockSignature
 			}
 
 		}

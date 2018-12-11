@@ -75,7 +75,7 @@ func (s *Signature) UnmarshalBinary(data []byte) (err error) {
 //---------------------------------------------------------------------------------------------------------------------
 
 const (
-	SIGNATURES_MAX_COUNT = common.OBSERVERS_MAX_COUNT
+	SIGNATURES_MAX_COUNT = common.ObserversMaxCount
 )
 
 type Signatures struct {

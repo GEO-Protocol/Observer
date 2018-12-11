@@ -24,5 +24,5 @@ var (
 	ErrInvalidBlockHeight = errors.New("invalid block height")
 
 	// Blocks Producer
-	ErrAttemptToGenerateRedundantBlockProposal = errors.New("attempt to generate redundant block proposal")
+	ErrAttemptToGenerateRedundantProposedBlock = errors.New("attempt to generate redundant block proposal")
 )

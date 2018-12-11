@@ -2,7 +2,7 @@ package network
 
 import (
 	"geo-observers-blockchain/core/chain"
-	"geo-observers-blockchain/core/chain/geo"
+	"geo-observers-blockchain/core/geo"
 )
 
 const (
@@ -16,8 +16,8 @@ type Receiver struct {
 	Claims          chan<- geo.Claim
 	TSLs            chan<- geo.TransactionSignaturesList
 	BlockSignatures chan<- chain.BlockSignatures
-	BlocksProposed  chan<- chain.BlockProposal
-	BlockCandidates chan<- chain.SignedBlock
+	BlocksProposed  chan<- chain.ProposedBlock
+	BlockCandidates chan<- chain.BlockSigned
 }
 
 type Broadcaster struct {
@@ -32,7 +32,7 @@ func NewCommunicator() *Communicator {
 		Claims:          make(chan<- geo.Claim, ChannelBufferSize),
 		TSLs:            make(chan<- geo.TransactionSignaturesList, ChannelBufferSize),
 		BlockSignatures: make(chan<- chain.BlockSignatures, ChannelBufferSize),
-		BlocksProposed:  make(chan<- chain.BlockProposal, ChannelBufferSize),
-		BlockCandidates: make(chan<- chain.SignedBlock, ChannelBufferSize),
+		BlocksProposed:  make(chan<- chain.ProposedBlock, ChannelBufferSize),
+		BlockCandidates: make(chan<- chain.BlockSigned, ChannelBufferSize),
 	}
 }

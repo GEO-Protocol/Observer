@@ -1,10 +1,11 @@
 package chain
 
 import (
-	"geo-observers-blockchain/core/chain/geo"
 	"geo-observers-blockchain/core/common"
 	"geo-observers-blockchain/core/crypto/keystore"
+	"geo-observers-blockchain/core/geo"
 	"geo-observers-blockchain/core/network/external"
+	"geo-observers-blockchain/core/network/messages"
 	"geo-observers-blockchain/core/settings"
 	log "github.com/sirupsen/logrus"
 	"math"
@@ -12,20 +13,25 @@ import (
 )
 
 const (
-	AverageBlockTimeout = time.Second * 5
+	ChannelBufferSize = 1
 )
 
 // todo: test for blocks collisions
 // todo: test if 2 concurrent blocks collected relatively equal amount of approves
+// todo: consider including signatures under the block hash,
+//  this would really increase consensus complexity,
+//  but would guarantee signatures constraint
+
+// todo: prevent claims collisions in blockchain
 type BlocksProducer struct {
 
 	// Outgoing flows
-	OutgoingBlocksProposals chan *BlockProposal
+	OutgoingBlocksProposals  chan *ProposedBlock
+	OutgoingBlocksSignatures chan *messages.SignatureMessage
 
 	// Incoming flows
-
-	// Collects proposed blocks from other observers.
-	IncomingBlocksProposals chan *BlockProposal
+	IncomingBlocksProposals  chan *ProposedBlock
+	IncomingBlocksSignatures chan *messages.SignatureMessage
 
 	Settings   *settings.Settings
 	ClaimsPool *ClaimsPool
@@ -41,75 +47,88 @@ type BlocksProducer struct {
 	// todo: adjust after each block inserted
 	nextBlockAllowedAfter time.Time
 
-	proposedBlock *BlockProposal
+	proposedBlock *ProposedBlock
+
+	// todo: make it possible to collect signatures for several blocks, by their hashes.
+	//       (defence from signatures holding attack)
+	//
+	// Collects signatures from other observers for the proposed block.
+	// The format: <observer index -> signature for current proposed block>
+	//
+	// On each one observers configuration update -
+	// this list would automatically resize to fit current observers configuration.
+	proposedBlockSignatures *IndexedObserversSignatures
+
+	// External errors flow
+	errorsFlow chan<- error
 }
 
 func NewBlocksProducer(
 	conf *settings.Settings,
 	reporter *external.Reporter,
-	keystore *keystore.KeyStore) *BlocksProducer {
+	keystore *keystore.KeyStore) (producer *BlocksProducer, err error) {
 
-	return &BlocksProducer{
-		OutgoingBlocksProposals: make(chan *BlockProposal, 1),
+	chain, err := NewChain()
+	if err != nil {
+		return
+	}
 
-		IncomingBlocksProposals: make(chan *BlockProposal, 1),
+	producer = &BlocksProducer{
+		// Outgoing data flow
+		OutgoingBlocksProposals:  make(chan *ProposedBlock, ChannelBufferSize),
+		OutgoingBlocksSignatures: make(chan *messages.SignatureMessage, ChannelBufferSize),
+
+		// Incoming data flow
+		IncomingBlocksProposals:  make(chan *ProposedBlock, ChannelBufferSize),
+		IncomingBlocksSignatures: make(chan *messages.SignatureMessage, ChannelBufferSize),
 
 		Settings:   conf,
 		ClaimsPool: NewClaimsPool(),
 		TSLsPool:   NewTSLsPool(),
-		Chain:      NewChain(),
+		Chain:      chain,
 		Keystore:   keystore,
 
 		ObserversConfigurationReporter: reporter,
 	}
+	return
 }
 
 func (p *BlocksProducer) Run(errors chan<- error) {
 
-	handleRuntimeErrorIfPresent := func(err error) {
-		if err != nil {
-			log.Errorln(err)
-			time.Sleep(time.Second * 5)
-		}
-	}
+	// todo: sync with majority of other observers.
 
-	var currentObserversConfigurationRev uint64 = math.MaxUint64
+	// todo: remove this
+	// Attach received errors flow to the internal channel,
+	// to prevent redundant errors channel propagation.
+	p.errorsFlow = errors
+
+	// Revision number of current observers configuration.
+	// Observers configuration might change on the fly,
+	// to catch the moment of change - revision number is used.
+	var currentObsConfRev uint64 = math.MaxUint64
 
 	for {
 		obsConf := p.fetchObserversConfiguration()
-		if obsConf.Revision != currentObserversConfigurationRev {
+		if obsConf.Revision != currentObsConfRev {
 			// Observers configuration has changed.
-			// As a result - observers order has changed as well.
-			currentObserversConfigurationRev = obsConf.Revision
-			p.resetObserversOrder(obsConf)
+			// As a result - observers order has changed as well
+			// so observers need to be reconfigured.
+			currentObsConfRev = obsConf.Revision
+			p.resetObserversConfiguration(obsConf)
 		}
 
 		if p.shouldGenerateNextBlock(obsConf) {
 			err := p.generateNextBlockProposal(obsConf)
-			handleRuntimeErrorIfPresent(err)
+			p.handleRuntimeErrorIfPresent(err)
 
 			p.distributeBlockProposal()
 
 		} else {
-			// todo: process responses from other observers
-
-			p.processBlocksFromOtherObservers()
-			p.processBlocksSignaturesFromOtherObservers()
-
+			// Process responses and other data from other observers.
+			err := p.processBlocksAndResponsesFromOtherObservers(obsConf)
+			p.handleRuntimeErrorIfPresent(err)
 		}
 	}
-
-	//
-	//
-	//// todo: check if configuration changed - restart block producing
-	//
-	//for {
-	//	// todo: sync with other observers (majority)
-	//
-	//	if ()
-	//}
-
-	// ExternalObserversBlockSignatures <-chan BlockSignatures, ExternalObserversBlocks <-chan SignedBlock, ExternalObserversBlocksProposed <-chan BlockProposal
 }
 
 // todo implement
@@ -143,11 +162,15 @@ func (p *BlocksProducer) shouldGenerateNextBlock(conf *external.Configuration) b
 		return allowNextBlock()
 	}
 
+	// todo: обзервер не може генерувати блоки, якщо він перед точкою генерації
+	//  якщо останній обзеревер не генеруаватиме блок - генерація блоків зупиниться.
+	//  потрібна формула для коректного прорахунку часу на генерацію блоку.
+
 	// Prevent observers that already generated the block,
 	// or has an ability to do it from generation of the block.
 	if uint64(p.orderPosition) > k {
 
-		timeWindow := AverageBlockTimeout * time.Duration(p.orderPosition)
+		timeWindow := common.AverageBlockGenerationTimeRange * time.Duration(p.orderPosition)
 		allowedAfter := p.Chain.LastBlockTimestamp.Add(timeWindow)
 
 		// In case if no candidate block is present
@@ -164,7 +187,7 @@ func (p *BlocksProducer) shouldGenerateNextBlock(conf *external.Configuration) b
 func (p *BlocksProducer) generateNextBlockProposal(conf *external.Configuration) (err error) {
 
 	if p.hasProposedBlock() {
-		return common.ErrAttemptToGenerateRedundantBlockProposal
+		return common.ErrAttemptToGenerateRedundantProposedBlock
 	}
 
 	// todo: include some data from mem pool
@@ -172,9 +195,9 @@ func (p *BlocksProducer) generateNextBlockProposal(conf *external.Configuration)
 	tsls := geo.TransactionSignaturesLists{}
 
 	if p.Settings.Debug == false {
-		if claims.Count == 0 && tsls.Count == 0 {
+		if claims.Count() == 0 && tsls.Count() == 0 {
 			// No new block should be generated in case if there is no info for it.
-			err = nil
+			// (except debug mode)
 			return
 		}
 	}
@@ -218,38 +241,54 @@ func (p *BlocksProducer) fetchObserversConfiguration() *external.Configuration {
 	}
 }
 
-func (p *BlocksProducer) processBlocksFromOtherObservers() {
+func (p *BlocksProducer) processBlocksAndResponsesFromOtherObservers(conf *external.Configuration) (err error) {
 	select {
 	// todo: implement blocks fetching
 
-	case blockProposed := <-p.IncomingBlocksProposals:
+	case block := <-p.IncomingBlocksProposals:
 		{
-			p.log().Info("validate block", blockProposed)
+			err = p.processIncomingProposedBlock(block)
+			return
 		}
 
-	case _ = <-time.After(AverageBlockTimeout):
+	case sig := <-p.IncomingBlocksSignatures:
+		{
+			err = p.processIncomingProposedBlockSignature(sig, conf)
+			return
+		}
+
+	// todo: delta for next block time point must be here
+	case _ = <-time.After(common.AverageBlockGenerationTimeRange):
 		{
 
 			// todo: temp
 			p.proposedBlock = nil
-
 			return
 		}
 	}
 }
 
-func (p *BlocksProducer) resetObserversOrder(conf *external.Configuration) {
+func (p *BlocksProducer) resetObserversConfiguration(conf *external.Configuration) {
+
+	// Observers configuration has been changed.
+	// Registry position of the current observer might change.
+	// Now it must be reset in accordance to new configuration.
 	for i, observer := range conf.Observers {
 		if observer.Host == p.Settings.Observers.GNS.Host && observer.Port == p.Settings.Observers.GNS.Port {
 			p.orderPosition = uint16(i)
 		}
 	}
+
+	// Due to configuration change -
+	// previous signatures lists for the blocks are invalid now.
+	// Signatures registry must reset.
+	p.proposedBlockSignatures = NewIndexedObserversSignatures(len(conf.Observers))
 }
 
 // approximateRoundTimeout reports approximate duration of one round, based on current observers configuration.
 func (p *BlocksProducer) approximateRoundTimeout(conf *external.Configuration) time.Duration {
 	totalObserversCount := len(conf.Observers)
-	return AverageBlockTimeout * time.Duration(totalObserversCount)
+	return common.AverageBlockGenerationTimeRange * time.Duration(totalObserversCount)
 }
 
 func (p *BlocksProducer) hasProposedBlock() bool {
@@ -264,10 +303,150 @@ func (p *BlocksProducer) hasProposedBlock() bool {
 	return false
 }
 
-func (p *BlocksProducer) log() *log.Entry {
-	return log.WithFields(log.Fields{"subsystem": "BlockProducer"})
+func (p *BlocksProducer) validateProposedBlock(block *ProposedBlock) (valid bool, err error) {
+	if block == nil {
+		return false, common.ErrNilParameter
+	}
+
+	// todo: check whose order now to generate the block.
+	// todo: check that block was generated by right observer, whose order is now.
+
+	// todo: if block with such number is already included into the chain - reject
+	// todo: if block with such number has been rejected earlier - reject
+	// todo: check internal block structure
+
+	return true, nil
 }
 
-func (p *BlocksProducer) processBlocksSignaturesFromOtherObservers() {
-	//panic("not implemented")
+func (p *BlocksProducer) validateProposedBlockSignature(
+	sig *messages.SignatureMessage, conf *external.Configuration) (isValid bool, err error) {
+
+	if sig == nil {
+		return false, common.ErrNilParameter
+	}
+
+	if p.proposedBlock == nil {
+		// There is no any pending proposed block.
+		return false, nil
+	}
+
+	if len(conf.Observers) < int(sig.AddresseeObserverIndex+1) {
+		// Current observers configuration has no observer with such index.
+		return false, nil
+	}
+
+	senderObserver := conf.Observers[sig.AddresseeObserverIndex]
+	if !p.Settings.Debug {
+		// Prevent validation of it's own signatures,
+		// except in debug mode.
+		if p.Settings.Observers.Network.Host == senderObserver.Host &&
+			p.Settings.Observers.Network.Port == senderObserver.Port {
+			return false, nil
+		}
+	}
+
+	isValid = p.Keystore.CheckExternalSignature(p.proposedBlock.Hash, *sig.Signature, senderObserver.PubKey)
+	return
+}
+
+func (p *BlocksProducer) processIncomingProposedBlock(block *ProposedBlock) (err error) {
+	if block == nil {
+		return common.ErrNilParameter
+	}
+
+	isBlockValid, err := p.validateProposedBlock(block)
+	if err != nil {
+		return
+	}
+
+	if !isBlockValid {
+		return
+	}
+
+	return p.signBlockAndPropagateSignature(block)
+}
+
+func (p *BlocksProducer) signBlockAndPropagateSignature(block *ProposedBlock) (err error) {
+	signature, err := p.Keystore.SignHash(block.Hash)
+	if err != nil {
+		return err
+	}
+
+	// todo: remember block hash, number and signature on the disk
+	// todo: prevent double signing of the same block number
+
+	p.OutgoingBlocksSignatures <- &messages.SignatureMessage{
+		Signature: signature, AddresseeObserverIndex: block.AuthorPosition}
+
+	context := log.Fields{"Height": block.Height, "Hash": block.Hash.Hex()}
+	p.log().WithFields(context).Info("Proposed block signed")
+	return
+}
+
+func (p *BlocksProducer) processIncomingProposedBlockSignature(
+	sig *messages.SignatureMessage, conf *external.Configuration) (err error) {
+
+	if sig == nil {
+		return common.ErrNilParameter
+	}
+
+	isSignatureValid, err := p.validateProposedBlockSignature(sig, conf)
+	if err != nil {
+		return
+	}
+
+	if isSignatureValid {
+		// Append received signature to the signatures list.
+		if int(sig.AddresseeObserverIndex+1) < len(p.proposedBlockSignatures.Signatures) {
+			p.proposedBlockSignatures.Signatures[sig.AddresseeObserverIndex] = sig.Signature
+		}
+
+		// Check consensus.
+		totalApproves := 0
+		for _, sig := range p.proposedBlockSignatures.Signatures {
+			if sig != nil {
+				totalApproves++
+			}
+		}
+
+		// todo: uncoment
+		//consensusReached := totalApproves >= common.ObserversConsensusCount
+
+		consensusReached := true
+		if consensusReached {
+			bs := &BlockSigned{Data: p.proposedBlock, Signatures: p.proposedBlockSignatures}
+			err = p.Chain.Append(bs)
+			if err != nil {
+				return
+			}
+
+			// todo: send signatures collected to all other
+			err = p.propagateCollectedSignatures()
+			if err != nil {
+				return
+			}
+
+			p.proposedBlock = nil
+			p.proposedBlockSignatures = NewIndexedObserversSignatures(len(conf.Observers))
+		}
+	}
+
+	return
+}
+
+func (p *BlocksProducer) propagateCollectedSignatures() (err error) {
+	p.log().Warn("propagateCollectedSignatures is NOT IMPLEMENTED")
+
+	return nil
+}
+
+func (p *BlocksProducer) handleRuntimeErrorIfPresent(err error) {
+	if err != nil {
+		p.errorsFlow <- err
+		time.Sleep(time.Second * 5)
+	}
+}
+
+func (p *BlocksProducer) log() *log.Entry {
+	return log.WithFields(log.Fields{"subsystem": "BlockProducer"})
 }

@@ -35,7 +35,7 @@ func (h *PubKey) UnmarshalBinary(data []byte) error {
 // --------------------------------------------------------------------------------------------------------------------
 
 const (
-	PubKeysMaxCount = common.GEO_TransactionMaxParticipant
+	PubKeysMaxCount = common.GeoTransactionMaxParticipantsCount
 )
 
 type PubKeys struct {

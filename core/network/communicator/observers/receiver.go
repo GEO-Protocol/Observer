@@ -5,29 +5,32 @@ import (
 	"bytes"
 	"fmt"
 	"geo-observers-blockchain/core/chain"
-	"geo-observers-blockchain/core/chain/geo"
 	"geo-observers-blockchain/core/common"
+	"geo-observers-blockchain/core/geo"
+	"geo-observers-blockchain/core/network/messages"
 	"geo-observers-blockchain/core/utils"
 	"net"
 )
 
 type Receiver struct {
-	Claims          chan geo.Claim
-	TSLs            chan geo.TransactionSignaturesList
-	BlockSignatures chan *chain.BlockSignatures
-	BlocksProposed  chan *chain.BlockProposal
-	BlockCandidates chan *chain.SignedBlock
+	Claims chan geo.Claim
+	TSLs   chan geo.TransactionSignaturesList
+	//BlockSignatures chan *chain.BlockSignatures
+	BlockSignatures chan *messages.SignatureMessage
+	BlocksProposed  chan *chain.ProposedBlock
+	//BlockCandidates chan *chain.BlockSigned
 }
 
 func NewReceiver() *Receiver {
 	const kChannelBufferSize = 1
 
 	return &Receiver{
-		Claims:          make(chan geo.Claim, kChannelBufferSize),
-		TSLs:            make(chan geo.TransactionSignaturesList, kChannelBufferSize),
-		BlockSignatures: make(chan *chain.BlockSignatures, kChannelBufferSize),
-		BlocksProposed:  make(chan *chain.BlockProposal, kChannelBufferSize),
-		BlockCandidates: make(chan *chain.SignedBlock, kChannelBufferSize),
+		Claims: make(chan geo.Claim, kChannelBufferSize),
+		TSLs:   make(chan geo.TransactionSignaturesList, kChannelBufferSize),
+		//BlockSignatures: make(chan *chain.BlockSignatures, kChannelBufferSize),
+		BlockSignatures: make(chan *messages.SignatureMessage, kChannelBufferSize),
+		BlocksProposed:  make(chan *chain.ProposedBlock, kChannelBufferSize),
+		//BlockCandidates: make(chan *chain.BlockSigned, kChannelBufferSize),
 	}
 }
 
@@ -132,14 +135,26 @@ func (r *Receiver) parseAndRouteData(data []byte) (err error) {
 	switch uint8(dataTypeHeader) {
 	case DataTypeBlockProposal:
 		{
-			block := &chain.BlockProposal{}
+			block := &chain.ProposedBlock{}
 			err = block.UnmarshalBinary(data[1:])
 			if err != nil {
 				return
 			}
 
 			r.BlocksProposed <- block
-			return nil
+			return
+		}
+
+	case DataTypeBlockSignature:
+		{
+			message := &messages.SignatureMessage{}
+			err = message.UnmarshalBinary(data[1:])
+			if err != nil {
+				return
+			}
+
+			r.BlockSignatures <- message
+			return
 		}
 
 	default:

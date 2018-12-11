@@ -37,7 +37,7 @@ func Open(filename string) (*AppendOnlyStorage, error) {
 	storage := &AppendOnlyStorage{}
 
 	var err error
-	storage.file, err = os.Open(filename)
+	storage.file, err = os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		return nil, err
 	}
@@ -164,6 +164,11 @@ func (c *AppendOnlyStorage) Get(index uint64) (buffer []byte, err error) {
 	}
 
 	return buffer, nil
+}
+
+func (c *AppendOnlyStorage) HasIndex(index uint64) bool {
+	_, isPresent := c.index[index]
+	return isPresent
 }
 
 func (c *AppendOnlyStorage) Cut(fromIndex uint64) error {

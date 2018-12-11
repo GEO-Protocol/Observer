@@ -1,6 +1,9 @@
 package types
 
-import "crypto/sha256"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+)
 
 const (
 	HashSize = 32
@@ -28,4 +31,8 @@ func (h *SHA256Container) UnmarshalBinary(data []byte) error {
 		return ErrorInvalidCopyOperation
 
 	}
+}
+
+func (h *SHA256Container) Hex() string {
+	return "0x" + hex.EncodeToString(h.Bytes[:])
 }

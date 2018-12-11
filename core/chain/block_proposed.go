@@ -1,14 +1,14 @@
 package chain
 
 import (
-	"geo-observers-blockchain/core/chain/geo"
 	"geo-observers-blockchain/core/common"
 	"geo-observers-blockchain/core/common/types"
 	"geo-observers-blockchain/core/crypto/ecdsa"
+	"geo-observers-blockchain/core/geo"
 	"geo-observers-blockchain/core/utils"
 )
 
-type BlockProposal struct {
+type ProposedBlock struct {
 	// Sequence number of the proposed block.
 	Height uint64
 
@@ -32,14 +32,14 @@ type BlockProposal struct {
 
 func NewBlockProposal(
 	height uint64, observersConfHash types.SHA256Container,
-	claims geo.Claims, TSLs geo.TransactionSignaturesLists) (block *BlockProposal, err error) {
+	claims geo.Claims, TSLs geo.TransactionSignaturesLists) (block *ProposedBlock, err error) {
 
 	if height == 0 {
 		err = common.ErrInvalidBlockHeight
 		return
 	}
 
-	block = &BlockProposal{}
+	block = &ProposedBlock{}
 	block.Height = height
 	block.ObserversConfHash = observersConfHash
 	block.Claims = claims
@@ -49,15 +49,15 @@ func NewBlockProposal(
 	return
 }
 
-func (b *BlockProposal) IsSigned() bool {
+func (b *ProposedBlock) IsSigned() bool {
 	return b.AuthorSignature != nil
 }
 
-func (b *BlockProposal) AttachSignature(signature *ecdsa.Signature) {
+func (b *ProposedBlock) AttachSignature(signature *ecdsa.Signature) {
 	b.AuthorSignature = signature
 }
 
-func (b *BlockProposal) MarshalBinary() (data []byte, err error) {
+func (b *ProposedBlock) MarshalBinary() (data []byte, err error) {
 	hashData, err := b.Hash.MarshalBinary()
 	if err != nil {
 		return
@@ -104,7 +104,7 @@ func (b *BlockProposal) MarshalBinary() (data []byte, err error) {
 	return
 }
 
-func (b *BlockProposal) UnmarshalBinary(data []byte) (err error) {
+func (b *ProposedBlock) UnmarshalBinary(data []byte) (err error) {
 	const (
 		fieldOffsetHeight                = 0
 		fieldsOffsetHashData             = types.Uint64ByteSize
@@ -161,7 +161,7 @@ func (b *BlockProposal) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
-func (b *BlockProposal) updateHash() (err error) {
+func (b *ProposedBlock) updateHash() (err error) {
 	// tsls marshalling
 	claims, err := b.Claims.MarshalBinary()
 	if err != nil {
@@ -187,12 +187,4 @@ func (b *BlockProposal) updateHash() (err error) {
 	return
 }
 
-type SignedBlock struct {
-	Block      BlockProposal
-	Signatures ecdsa.Signatures
-}
-
-type BlockSignatures struct {
-	Hash       types.SHA256Container
-	Signatures ecdsa.Signatures
-}
+// --------------------------------------------------------------------------------------------------------------------

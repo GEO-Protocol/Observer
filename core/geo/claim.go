@@ -15,7 +15,7 @@ type Claim struct {
 func NewClaim() *Claim {
 	return &Claim{
 		TxUUID:  types.NewTransactionUUID(),
-		PubKeys: lamport.NewPubKeys(),
+		PubKeys: &lamport.PubKeys{},
 	}
 }
 
