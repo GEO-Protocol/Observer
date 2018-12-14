@@ -5,6 +5,7 @@ import (
 	"errors"
 	"geo-observers-blockchain/core/network/external"
 	"net"
+	"strings"
 	"sync"
 	"time"
 )
@@ -83,9 +84,40 @@ func (cm *ConnectionsMap) Set(observer *external.Observer, conn net.Conn) {
 	}
 }
 
-func (cm *ConnectionsMap) Delete(observer *external.Observer, conn *net.Conn) {
+func (cm *ConnectionsMap) DeleteByObserver(observer *external.Observer) {
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
 
+	conn, err := cm.Get(observer)
+	if err != nil {
+		return
+	}
+
+	conn.Connection.Close()
 	delete(cm.Connections, observer)
+}
+
+func (cm *ConnectionsMap) DeleteByRemoteHost(host string) {
+	cm.mutex.Lock()
+	defer cm.mutex.Unlock()
+
+	obsoleteRecords := make([]struct {
+		*external.Observer
+		net.Conn
+	}, 0)
+
+	for k, v := range cm.Connections {
+		currentHost := strings.Split(v.Connection.RemoteAddr().String(), ":")[0]
+		if currentHost == host {
+			obsoleteRecords = append(obsoleteRecords, struct {
+				*external.Observer
+				net.Conn
+			}{k, v.Connection})
+		}
+	}
+
+	for _, record := range obsoleteRecords {
+		record.Conn.Close()
+		delete(cm.Connections, record.Observer)
+	}
 }

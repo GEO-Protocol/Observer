@@ -6,21 +6,27 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"geo-observers-blockchain/core/common"
+	"geo-observers-blockchain/core/settings"
 	"io/ioutil"
 	"os"
+)
+
+var (
+	configuration *Configuration = nil
+	number        int32          = -1
 )
 
 // todo: implement
 // todo: comments
 type Reporter struct {
+	settings *settings.Settings
 }
 
-var (
-	configuration *Configuration = nil
-)
-
-func NewReporter() *Reporter {
-	return &Reporter{}
+func NewReporter(settings *settings.Settings) *Reporter {
+	return &Reporter{
+		settings: settings,
+	}
 }
 
 // todo: cache the results internally
@@ -28,14 +34,33 @@ func (r *Reporter) GetCurrentConfiguration() (*Configuration, error) {
 	return r.temptStaticConfiguration(), nil
 }
 
+// todo: cache the results
+func (r *Reporter) GetCurrentObserverNumber() (uint16, error) {
+	if number >= 0 {
+		return uint16(number), nil
+	}
+
+	conf := r.temptStaticConfiguration()
+	for i, observer := range conf.Observers {
+		if observer.Host == r.settings.Observers.Network.Host {
+			if observer.Port == r.settings.Observers.Network.Port {
+				number = int32(i)
+				return uint16(number), nil
+			}
+		}
+	}
+
+	return 0, common.ErrNilParameter
+}
+
 // todo: sort observers in strict order!
 func (r *Reporter) temptStaticConfiguration() *Configuration {
 	if configuration == nil {
 		observers := make([]*Observer, 0, 4)
-		observers = append(observers, NewObserver("0.0.0.0", 3000, r.tempLoadPublicKey(1)))
-		//observers = append(observers, NewObserver("127.0.0.1", 2000, r.tempLoadPublicKey(2)))
-		//observers = append(observers, NewObserver("127.0.0.1", 3002, r.tempLoadPublicKey(3)))
-		//observers = append(observers, NewObserver("127.0.0.1", 3003, r.tempLoadPublicKey(4)))
+		observers = append(observers, NewObserver("127.0.0.1", 3000, r.tempLoadPublicKey(1)))
+		observers = append(observers, NewObserver("127.0.0.1", 3001, r.tempLoadPublicKey(2)))
+		observers = append(observers, NewObserver("127.0.0.1", 3002, r.tempLoadPublicKey(3)))
+		observers = append(observers, NewObserver("127.0.0.1", 3003, r.tempLoadPublicKey(4)))
 
 		configuration = NewConfiguration(0, r.sortObservers(observers))
 	}

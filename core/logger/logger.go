@@ -17,6 +17,7 @@ func InitLogger(conf *settings.Settings) *os.File {
 		log.SetFormatter(&log.JSONFormatter{})
 
 	} else {
+		log.SetLevel(log.DebugLevel)
 		log.SetFormatter(&log.TextFormatter{
 			FullTimestamp: true,
 		})
