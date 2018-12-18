@@ -8,29 +8,43 @@ import (
 	"geo-observers-blockchain/core/common"
 	"geo-observers-blockchain/core/geo"
 	"geo-observers-blockchain/core/network/messages"
+	"geo-observers-blockchain/core/requests"
+	"geo-observers-blockchain/core/responses"
 	"geo-observers-blockchain/core/utils"
+	log "github.com/sirupsen/logrus"
+	"io"
 	"net"
+	"strings"
+	"time"
 )
 
 type Receiver struct {
+	OutgoingEventsConnectionClosed chan interface{}
+
 	Claims chan geo.Claim
 	TSLs   chan geo.TransactionSignaturesList
 	//BlockSignatures chan *chain.BlockSignatures
 	BlockSignatures chan *messages.SignatureMessage
 	BlocksProposed  chan *chain.ProposedBlock
 	//BlockCandidates chan *chain.BlockSigned
+	Requests  chan requests.Request
+	Responses chan responses.Response
 }
 
 func NewReceiver() *Receiver {
-	const kChannelBufferSize = 1
+	const ChannelBufferSize = 1
 
 	return &Receiver{
-		Claims: make(chan geo.Claim, kChannelBufferSize),
-		TSLs:   make(chan geo.TransactionSignaturesList, kChannelBufferSize),
-		//BlockSignatures: make(chan *chain.BlockSignatures, kChannelBufferSize),
-		BlockSignatures: make(chan *messages.SignatureMessage, kChannelBufferSize),
-		BlocksProposed:  make(chan *chain.ProposedBlock, kChannelBufferSize),
-		//BlockCandidates: make(chan *chain.BlockSigned, kChannelBufferSize),
+		OutgoingEventsConnectionClosed: make(chan interface{}, 1),
+
+		Claims: make(chan geo.Claim, ChannelBufferSize),
+		TSLs:   make(chan geo.TransactionSignaturesList, ChannelBufferSize),
+		//BlockSignatures: make(chan *chain.BlockSignatures, ChannelBufferSize),
+		BlockSignatures: make(chan *messages.SignatureMessage, ChannelBufferSize),
+		BlocksProposed:  make(chan *chain.ProposedBlock, ChannelBufferSize),
+		//BlockCandidates: make(chan *chain.BlockSigned, ChannelBufferSize),
+		Requests:  make(chan requests.Request, ChannelBufferSize),
+		Responses: make(chan responses.Response, ChannelBufferSize),
 	}
 }
 
@@ -60,30 +74,29 @@ func (r *Receiver) Run(host string, port uint16, errors chan<- error) {
 }
 
 func (r *Receiver) handleConnection(conn net.Conn, errors chan<- error) {
-	// todo: uncoment
 	defer conn.Close()
 
 	reader := bufio.NewReader(conn)
 
 	for {
-		//
-		//
-		//t := make([]byte, 1024, 1024)
-		//k, err := reader.Read(t)
-		//
-		//
-		////k, err := conn.Read(t)
-		//fmt.Println(err, k, conn.RemoteAddr())
-		//time.Sleep(time.Second * 2)
-
 		dataPackage, err := r.receiveDataPackage(reader)
 		if err != nil {
+			if err == io.EOF {
+				r.sendEvent(r.OutgoingEventsConnectionClosed, &EventConnectionClosed{
+					RemoteHost: strings.Split(conn.RemoteAddr().String(), ":")[0],
+					RemotePort: strings.Split(conn.RemoteAddr().String(), ":")[1],
+				})
+				return
+			}
+
 			errors <- err
 
 			// In case of error - connection must be closed.
 			// No more read attempt must be performed.
 			return
 		}
+
+		r.log().Debug("[TX<=] ", len(dataPackage), "B received, ", conn.RemoteAddr())
 
 		err = r.parseAndRouteData(dataPackage)
 		if err != nil {
@@ -157,7 +170,51 @@ func (r *Receiver) parseAndRouteData(data []byte) (err error) {
 			return
 		}
 
+	case DataTypeRequestTimeFrames:
+		{
+			request := &requests.RequestSynchronisationTimeFrames{}
+			err = request.UnmarshalBinary(data[1:])
+			if err != nil {
+				return
+			}
+
+			r.Requests <- request
+			return
+		}
+
+	case DataTypeResponseTimeFrame:
+		{
+			r.log().Info("Time Frame received")
+
+			response := &responses.ResponseTimeFrame{}
+			err = response.UnmarshalBinary(data[1:])
+			if err != nil {
+				return
+			}
+
+			// Time frame response MUST be extended with time of receiving.
+			// It would be used further for time offset corrections.
+			response.Received = time.Now()
+
+			r.Responses <- response
+			return
+		}
+
 	default:
 		return common.ErrUnexpectedDataType
 	}
+}
+
+func (r *Receiver) sendEvent(channel chan interface{}, event interface{}) {
+	select {
+	case channel <- event:
+		{
+		}
+	default:
+		// todo: log error
+	}
+}
+
+func (r *Receiver) log() *log.Entry {
+	return log.WithFields(log.Fields{"subsystem": "receiver"})
 }

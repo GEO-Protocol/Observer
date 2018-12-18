@@ -7,6 +7,8 @@ import (
 	"geo-observers-blockchain/core/geo"
 	"geo-observers-blockchain/core/network/external"
 	"geo-observers-blockchain/core/network/messages"
+	"geo-observers-blockchain/core/requests"
+	"geo-observers-blockchain/core/responses"
 	"geo-observers-blockchain/core/settings"
 	"geo-observers-blockchain/core/utils"
 	log "github.com/sirupsen/logrus"
@@ -34,7 +36,12 @@ type Sender struct {
 	OutgoingTSLs             chan geo.TransactionSignaturesList
 	OutgoingProposedBlocks   chan *chain.ProposedBlock
 	OutgoingBlocksSignatures chan *messages.SignatureMessage
-	connections              *ConnectionsMap
+	OutgoingRequests         chan requests.Request
+	OutgoingResponses        chan responses.Response
+
+	IncomingEvents chan interface{}
+
+	connections *ConnectionsMap
 }
 
 func NewSender(conf *settings.Settings, observersConfigurationReporter *external.Reporter) *Sender {
@@ -48,6 +55,10 @@ func NewSender(conf *settings.Settings, observersConfigurationReporter *external
 		OutgoingTSLs:             make(chan geo.TransactionSignaturesList, kChannelBufferSize),
 		OutgoingProposedBlocks:   make(chan *chain.ProposedBlock, kChannelBufferSize),
 		OutgoingBlocksSignatures: make(chan *messages.SignatureMessage, kChannelBufferSize),
+		OutgoingRequests:         make(chan requests.Request, kChannelBufferSize),
+		OutgoingResponses:        make(chan responses.Response, kChannelBufferSize),
+
+		IncomingEvents: make(chan interface{}, kChannelBufferSize),
 
 		connections: NewConnectionsMap(time.Minute * 10),
 	}
@@ -58,50 +69,6 @@ func (s *Sender) Run(host string, port uint16, errors chan<- error) {
 	errors <- nil
 
 	s.waitAndSendInfo(errors)
-}
-
-//func (s *Sender) reinitialiseConnections(host string, port uint16, configuration *external.Configuration) {
-//	// In case if there are present connections - close all of them.
-//	if len(s.connections) > 0 {
-//		for _, connection := range s.connections {
-//			connection.Close()
-//		}
-//	}
-//
-//	// Drop previous connections and writers.
-//	s.connections = make(map[*external.Observer]net.Conn)
-//	s.writers = make(map[*external.Observer]io.Writer)
-//
-//	// Create new connection to each one observer listed in configuration.
-//	for _, observer := range configuration.Observers {
-//		// Prevent attempts to connect to itself.
-//		if observer.Host != host || observer.Port != port {
-//			s.connectToObserver(observer)
-//		}
-//	}
-//}
-
-func (s *Sender) connectToObserver(o *external.Observer) (connection *ConnectionWrapper, err error) {
-	conn, err := net.Dial("tcp", fmt.Sprint(o.Host, ":", o.Port))
-	if err != nil {
-		// No connection is possible to some of observers.
-		// Connection error would be reported, but it would not contain any connection details,
-		// so it would be very difficult to know which o can't be reached.
-		//
-		// To make it possible - some additional log information is printed here.
-		additionalInfo := log.Fields{"host": o.Host, "port": o.Port}
-		s.log().WithFields(additionalInfo).Errorln("Can't connect to remote observer.")
-
-		return nil, ErrObserverConnectionRefused
-	}
-
-	if s.Settings.Debug {
-		additionalInfo := log.Fields{"host": o.Host, "port": o.Port}
-		s.log().WithFields(additionalInfo).Info("Connected to remote observer.")
-	}
-
-	s.connections.Set(o, conn)
-	return s.connections.Get(o)
 }
 
 func (s *Sender) waitAndSendInfo(errors chan<- error) {
@@ -123,13 +90,27 @@ func (s *Sender) waitAndSendInfo(errors chan<- error) {
 		case proposedBlock := <-s.OutgoingProposedBlocks:
 			{
 				s.processBlockProposalSending(proposedBlock, errors)
-				return
 			}
 
 		case blockSignature := <-s.OutgoingBlocksSignatures:
 			{
 				s.processBlockSignatureSending(blockSignature, errors)
-				return
+			}
+
+		case request := <-s.OutgoingRequests:
+			{
+				s.processRequestSending(request, errors)
+			}
+
+		case response := <-s.OutgoingResponses:
+			{
+				s.processResponseSending(response, errors)
+			}
+
+		// Events
+		case event := <-s.IncomingEvents:
+			{
+				s.processIncomingEvent(event, errors)
 			}
 
 			// ...
@@ -139,6 +120,73 @@ func (s *Sender) waitAndSendInfo(errors chan<- error) {
 
 	for {
 		processSending()
+	}
+}
+
+func (s *Sender) processRequestSending(request requests.Request, errors chan<- error) {
+	if request == nil {
+		errors <- common.ErrNilParameter
+		return
+	}
+
+	// Mark request with observer's number,
+	// so the responder would know to which observer to respond.
+	currentObserverNumber, err := s.ObserversConfRep.GetCurrentObserverNumber()
+	if err != nil {
+		return
+	}
+	request.SetObserverNumber(currentObserverNumber)
+	s.log().Debug(currentObserverNumber)
+
+	data, err := request.MarshalBinary()
+	if err != nil {
+		errors <- utils.Wrap(ErrInvalidSendingAttempt, err.Error())
+		return
+	}
+
+	// todo: add positional number to the data
+
+	switch request.(type) {
+	case *requests.RequestSynchronisationTimeFrames:
+		{
+			data = markAs(data, StreamTypeRequestTimeFrames)
+			s.sendDataToObservers(data, allObservers(), errors)
+		}
+
+	default:
+		{
+			errors <- utils.Error(
+				"observers sender",
+				"unexpected request type occurred")
+		}
+	}
+}
+
+func (s *Sender) processResponseSending(response responses.Response, errors chan<- error) {
+	if response == nil {
+		errors <- common.ErrNilParameter
+		return
+	}
+
+	data, err := response.MarshalBinary()
+	if err != nil {
+		errors <- utils.Wrap(ErrInvalidSendingAttempt, err.Error())
+		return
+	}
+
+	switch response.(type) {
+	case *responses.ResponseTimeFrame:
+		{
+			data = markAs(data, StreamTypeResponseTimeFrame)
+			s.sendDataToObservers(data, []uint16{response.Request().ObserverNumber()}, errors)
+		}
+
+	default:
+		{
+			errors <- utils.Error(
+				"observers sender",
+				"unexpected response type occurred")
+		}
 	}
 }
 
@@ -183,6 +231,15 @@ func (s *Sender) processBlockSignatureSending(message *messages.SignatureMessage
 	s.sendDataToObservers(data, []uint16{message.AddresseeObserverIndex}, errors)
 }
 
+func (s *Sender) processIncomingEvent(event interface{}, errors chan<- error) {
+	switch event.(type) {
+	case *EventConnectionClosed:
+		{
+			s.connections.DeleteByRemoteHost(event.(*EventConnectionClosed).RemoteHost)
+		}
+	}
+}
+
 // Note: several errors might occur during data sending.
 // There are cases when sending should not be cancelled due to an error,
 // but the error itself must be reported.
@@ -203,16 +260,16 @@ func (s *Sender) sendDataToObservers(data []byte, observersIndexes []uint16, err
 		// Bytes must be sent to all observers.
 		for _, observer := range observersConf.Observers {
 
-			if !s.Settings.Debug {
-				// If not debug - prevent sending the data to itself.
-				// In debug mode it might be useful to send blocks to itself,
-				// to test whole network cycle in one executable process.
-				if observer.Host == s.Settings.Observers.Network.Host {
-					if observer.Port == s.Settings.Observers.Network.Port {
-						continue
-					}
+			//if !s.Settings.Debug {
+			// If not debug - prevent sending the data to itself.
+			// In debug mode it might be useful to send blocks to itself,
+			// to test whole network cycle in one executable process.
+			if observer.Host == s.Settings.Observers.Network.Host {
+				if observer.Port == s.Settings.Observers.Network.Port {
+					continue
 				}
 			}
+			//}
 
 			err := s.sendDataToObserver(observer, data)
 			if err != nil {
@@ -239,20 +296,60 @@ func (s *Sender) sendDataToObservers(data []byte, observersIndexes []uint16, err
 }
 
 func (s *Sender) sendDataToObserver(observer *external.Observer, data []byte) (err error) {
+	send := func(conn *ConnectionWrapper, data []byte) (err error) {
+		// Writing data total size.
+		dataSize := len(data)
+		dataSizeMarshaled := utils.MarshalUint32(uint32(dataSize))
+		bytesWritten, err := conn.Writer.Write(dataSizeMarshaled)
+		if err != nil {
+			return
+		}
+		if bytesWritten != len(dataSizeMarshaled) {
+			err = ErrPartialWriteOccurred
+			return
+		}
+
+		// todo: split the data to chunks of 2-4Kb in size
+		// todo: send them sequentially.
+
+		// Writing data.
+		//conn.Connection.(net.TCPConn).SetNoDelay(true)
+		bytesWritten, err = conn.Writer.Write(data)
+		if err != nil {
+			return
+		}
+
+		// todo: resend the rest (enhancement).
+		if bytesWritten != len(data) {
+			err = ErrPartialWriteOccurred
+			return
+		}
+
+		err = conn.Writer.Flush()
+		if err != nil {
+			return
+		}
+
+		//conn.Connection
+
+		s.log().Debug("[TX=>] ", len(data), "B sent, ", conn.Connection.RemoteAddr())
+		return nil
+	}
+
 	if len(data) == 0 {
 		return ErrEmptyData
 	}
 
-	if !s.Settings.Debug {
-		// If not debug - prevent sending the data to itself.
-		// In debug mode it might be useful to send blocks to itself,
-		// to test whole network cycle in one executable process.
-		if observer.Host == s.Settings.Observers.Network.Host {
-			if observer.Port == s.Settings.Observers.Network.Port {
-				return ErrCycleDataSending
-			}
+	//if !s.Settings.Debug {
+	// If not debug - prevent sending the data to itself.
+	// In debug mode it might be useful to send blocks to itself,
+	// to test whole network cycle in one executable process.
+	if observer.Host == s.Settings.Observers.Network.Host {
+		if observer.Port == s.Settings.Observers.Network.Port {
+			return ErrCycleDataSending
 		}
 	}
+	//}
 
 	conn, err := s.connections.Get(observer)
 	if err != nil {
@@ -272,45 +369,54 @@ func (s *Sender) sendDataToObserver(observer *external.Observer, data []byte) (e
 		}
 	}
 
-	// Writing data total size.
-	dataSize := len(data)
-	dataSizeMarshaled := utils.MarshalUint32(uint32(dataSize))
-	bytesWritten, err := conn.Writer.Write(dataSizeMarshaled)
+	err = send(conn, data)
 	if err != nil {
-		return
-	}
-	if bytesWritten != len(dataSizeMarshaled) {
-		err = ErrPartialWriteOccurred
-		return
+		conn, err = s.connectToObserver(observer)
+		if err != nil {
+			return
+		}
+
+		err = send(conn, data)
 	}
 
-	// todo: split the data to chunks of 2-4Kb in size
-	// todo: send them sequentially.
+	return
+}
 
-	// Writing data.
-	//conn.Connection.(net.TCPConn).SetNoDelay(true)
-	bytesWritten, err = conn.Writer.Write(data)
+func (s *Sender) connectToObserver(o *external.Observer) (connection *ConnectionWrapper, err error) {
+	conn, err := net.Dial("tcp", fmt.Sprint(o.Host, ":", o.Port))
 	if err != nil {
-		return
+		// No connection is possible to some of observers.
+		// Connection error would be reported, but it would not contain any connection details,
+		// so it would be very difficult to know which o can't be reached.
+		//
+		// To make it possible - some additional log information is printed here.
+		additionalInfo := log.Fields{"host": o.Host, "port": o.Port}
+		s.log().WithFields(additionalInfo).Errorln("Can't connect to remote observer.")
+
+		return nil, ErrObserverConnectionRefused
 	}
 
-	// todo: resend the rest (enhancement).
-	if bytesWritten != len(data) {
-		err = ErrPartialWriteOccurred
-		return
+	if s.Settings.Debug {
+		additionalInfo := log.Fields{"host": o.Host, "port": o.Port}
+		s.log().WithFields(additionalInfo).Info("Connected to remote observer.")
 	}
 
-	err = conn.Writer.Flush()
-	if err != nil {
-		return
-	}
-
-	//conn.Connection
-
-	s.log().Info(len(data), "sent")
-	return nil
+	s.connections.Set(o, conn)
+	return s.connections.Get(o)
 }
 
 func (s *Sender) log() *log.Entry {
 	return log.WithFields(log.Fields{"subsystem": "ObserversSender"})
+}
+
+// markAs prefixes "data" with "prefix" that specifies type of data,
+// so it might de decoded on the receiver's side.
+func markAs(data, prefix []byte) []byte {
+	return append(prefix, data...)
+}
+
+// allObservers is a syntax sugar for marking message/request
+// addressed to all observers from current configuration.
+func allObservers() []uint16 {
+	return nil
 }
