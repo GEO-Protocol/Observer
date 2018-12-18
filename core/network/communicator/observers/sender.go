@@ -147,7 +147,7 @@ func (s *Sender) processRequestSending(request requests.Request, errors chan<- e
 	// todo: add positional number to the data
 
 	switch request.(type) {
-	case *requests.RequestTimeFrames:
+	case *requests.RequestSynchronisationTimeFrames:
 		{
 			data = markAs(data, StreamTypeRequestTimeFrames)
 			s.sendDataToObservers(data, allObservers(), errors)

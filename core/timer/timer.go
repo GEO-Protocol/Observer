@@ -5,32 +5,73 @@ import (
 	"geo-observers-blockchain/core/network/external"
 	"geo-observers-blockchain/core/requests"
 	"geo-observers-blockchain/core/responses"
+	"geo-observers-blockchain/core/settings"
 	log "github.com/sirupsen/logrus"
 	"math"
 	"time"
 )
 
+// todo: think about time synchronisation once in a week/month,
+//       to prevent permanent delta increasing and time frames shifting.
+
+const (
+	kSynchronisationTimoutSeconds = 20
+
+	// WARN!
+	// Initial time frame index can't be 0, because it is valid index.
+	// It also can't be < 0, because of uint16.
+	// It is expected, that observers count would never exceed uint16.
+	// So it seems, that ideal initial value for kInitialTimeFrameIndex should be MAX uint16.
+	// On the next increment it would be set to 0.
+	kInitialTimeFrameIndex = math.MaxUint16
+)
+
+// ToDo: synchronisation mechanics needs huge testing.
+//       It works well enough for beta and internal GEO Client development, and even for the test-net,
+//       but IT IS NOT READY for the production usage.
+
 type Timer struct {
 	OutgoingEventsTimeFrameEnd chan *EventTimeFrameEnd
-	OutgoingRequestsTimeFrames chan *requests.RequestTimeFrames
-	IncomingRequestsTimeFrames chan *requests.RequestTimeFrames
+	OutgoingRequestsTimeFrames chan *requests.RequestSynchronisationTimeFrames
+	IncomingRequestsTimeFrames chan *requests.RequestSynchronisationTimeFrames
 	OutgoingResponsesTimeFrame chan *responses.ResponseTimeFrame
 	IncomingResponsesTimeFrame chan *responses.ResponseTimeFrame
 
+	settings *settings.Settings
+
+	// Internal events bus is used for controlling internal events loop.
+	// For example, in case if synchronisation with external observers is finished,
+	// and ticker might be started.
 	internalEventsBus chan interface{}
 
+	// External observers configuration reporter.
 	confReporter *external.Reporter
 
 	// Time left for the next time frame.
 	// By default, it is equal to the block generation time duration,
 	// but might be set to lover value after Sync() call.
 	nextFrameTimestamp time.Time
-	isTickerRunning    bool
 
+	// Time when synchronisation must be finished.
+	synchronisationDeadlineTimestamp time.Time
+
+	// If true - then timer is synchronized and is generating new ticks.
+	// By default is set to "false", because it is expected,
+	// that timer would be synchronized first.
+	isTickerRunning bool
+
+	// Frame == current time window.
+	// Total frames count == total observers count in current observers configuration.
+	// Each one frame is related to the corresponding observer.
+	// Frames are used as logical time windows for observers to emit blocks.
+	// For example, for observer 0 it's related time frame has number 0.
+	// Current frame index monotonically increases over time.
+	// In case of current frame index reaches last observer -
+	// process begins from the beginning.
 	frame *EventTimeFrameEnd
 }
 
-func New(reporter *external.Reporter) *Timer {
+func New(settings *settings.Settings, reporter *external.Reporter) *Timer {
 	initialConfiguration, _ := reporter.GetCurrentConfiguration()
 
 	return &Timer{
@@ -38,31 +79,30 @@ func New(reporter *external.Reporter) *Timer {
 		// It is better to lost timer tick, than process several ticks
 		// one by one without any delay, that might be considered as, malicious behaviour.
 		OutgoingEventsTimeFrameEnd: make(chan *EventTimeFrameEnd),
-
-		OutgoingRequestsTimeFrames: make(chan *requests.RequestTimeFrames, 1),
+		OutgoingRequestsTimeFrames: make(chan *requests.RequestSynchronisationTimeFrames, 1),
 		OutgoingResponsesTimeFrame: make(chan *responses.ResponseTimeFrame, 1),
 
 		// On synchronization stage,
 		// timer should be able to collect up to MAX OBSERVERS count of responses.
 		IncomingResponsesTimeFrame: make(chan *responses.ResponseTimeFrame, common.ObserversMaxCount),
-		IncomingRequestsTimeFrames: make(chan *requests.RequestTimeFrames, 1),
+		IncomingRequestsTimeFrames: make(chan *requests.RequestSynchronisationTimeFrames, 1),
 
 		// Internal events bus is used to control and to interrupt internal events loop.
 		internalEventsBus: make(chan interface{}),
 
+		settings: settings,
+
 		confReporter: reporter,
 
 		frame: &EventTimeFrameEnd{
-			Index:         math.MaxUint16,
-			Configuration: initialConfiguration,
+			Index: kInitialTimeFrameIndex,
+			Conf:  initialConfiguration,
 		},
 	}
 }
 
 func (t *Timer) Run(errors chan error) {
 	shortLoop := func() {
-		//t.log().Debug("Short loop started")
-
 		select {
 
 		// todo: reconfigure frames on external observers configuration change
@@ -82,8 +122,6 @@ func (t *Timer) Run(errors chan error) {
 	}
 
 	fullLoop := func() {
-		//t.log().Debug("Long loop started")
-
 		select {
 
 		// todo: reconfigure frames on external observers configuration change
@@ -107,9 +145,26 @@ func (t *Timer) Run(errors chan error) {
 		}
 	}
 
+	// WARN!
+	// Whole synchronisation flow MUST perform faster than one block generation timeout.
+	// At the moment, current logic does not support time frames synchronisation
+	// when 2 or more blocks was generated during synchronisation.
+	//
+	// todo: add support of short blocks timeouts.
+	var (
+		kMinimalTimeFramesExchangeTimeoutSeconds = 20
+		kMinimalAppropriateTimeoutSeconds        = int(common.AverageBlockGenerationTimeRange.Seconds()) -
+			kMinimalTimeFramesExchangeTimeoutSeconds
+	)
+
+	if kSynchronisationTimoutSeconds >= kMinimalAppropriateTimeoutSeconds {
+		panic(ErrInvalidSynchronisationTimeout)
+	}
+
 	// Attempt to sync with other observers before any operations processing.
-	// It is asynchronous operation so it must be launched in goroutine to not block internal events loop
-	// and make it possible to respond to requests.
+	// It is asynchronous operation, so it must be launched in goroutine
+	// to not block internal events loop and make it possible to respond to requests from core.
+	// Static assert check.
 	go t.syncWithOtherObservers()
 
 	for {
@@ -124,30 +179,55 @@ func (t *Timer) Run(errors chan error) {
 
 func (t *Timer) syncWithOtherObservers() {
 
-	setNextTick := func(timeLeft time.Duration) {
-		t.nextFrameTimestamp = time.Now().Add(timeLeft)
+	t.synchronisationDeadlineTimestamp = time.Now().Add(time.Second * kSynchronisationTimoutSeconds)
+
+	setNextTick := func(offset time.Duration) {
+		t.nextFrameTimestamp = time.Now().Add(offset)
+
+		// Interrupt internal loop, so this change would be processed.
 		t.internalEventsBus <- &EventTickerStarted{}
+	}
+
+	collectResponses := func() {
+		for {
+			if time.Now().After(t.synchronisationDeadlineTimestamp) {
+				break
+			}
+
+			time.Sleep(time.Millisecond * 50)
+			if len(t.IncomingResponsesTimeFrame) == common.ObserversMaxCount {
+				// There is no reason to wait longer.
+				// All responses has been collected.
+				break
+			}
+		}
 	}
 
 	// Request external observers for their current time frames data.
 	// Timer would process all collected responses and
 	// would adjust it's own configuration in accordance to the majority.
-	t.OutgoingRequestsTimeFrames <- &requests.RequestTimeFrames{}
+	t.OutgoingRequestsTimeFrames <- &requests.RequestSynchronisationTimeFrames{}
 
-	// Wait for all responses to be present
-	// todo: prevent blocking if all responses are present already.
-	//  (change response waiting logic)
-	time.Sleep(time.Second * 5)
+	t.log().Info("Time frames synchronization started...")
+	collectResponses()
 
-	majorityOfTTLs, err := t.findMajorityOfFrameResponses()
-	if err != nil {
-		t.log().Debug("Synchronisation is done, but NO RESPONSES was took into account")
+	nextFrameOffset, nextFrameIndex, responsesCollected, err := t.processMajorityOfFrameResponses()
+	if err == common.ErrEmptySequence {
+		t.log().Debug(
+			"Time frames synchronisation is done. " +
+				"NO RESPONSES was received and took into account.")
+
+		// Use default block generation time range.
+		t.frame = &EventTimeFrameEnd{Index: nextFrameIndex}
 		setNextTick(common.AverageBlockGenerationTimeRange)
 
 	} else {
-		t.log().Debug("Synchronisation is done, ", len(majorityOfTTLs), " responds is took into account")
-		averageTTL := t.processMajorityAndCalculateAverageNextFrameTTL(majorityOfTTLs)
-		setNextTick(time.Nanosecond * time.Duration(averageTTL))
+		t.log().Debug(
+			"Time frames synchronisation is done, ",
+			responsesCollected, " respond(s) was took into account.")
+
+		t.frame = &EventTimeFrameEnd{Index: nextFrameIndex}
+		setNextTick(time.Nanosecond * time.Duration(nextFrameOffset))
 	}
 }
 
@@ -164,20 +244,35 @@ func (t *Timer) processInternalEvent(event interface{}) error {
 	}
 }
 
-func (t *Timer) processTimeFrameRequest(request *requests.RequestTimeFrames) error {
+// processTimeFrameRequest schedules sending of response
+// with information about CURRENT time frame index and amount of nanoseconds to it's change.
+// In case if timer is in sync mode - it also adds amount of nanoseconds to the sync. finish.
+func (t *Timer) processTimeFrameRequest(request *requests.RequestSynchronisationTimeFrames) error {
+
 	var response *responses.ResponseTimeFrame
 
-	if t.isTickerRunning {
+	if !t.isTickerRunning {
+		if t.synchronisationDeadlineTimestamp.Second() == 0 {
+			// In case if timer is stopped, but is not in synchronisation phase -
+			// no time frame response should be returned, but it's also not an error.
+			return nil
+		}
+	}
+
+	kNextFrameTimeLeft := common.AverageBlockGenerationTimeRange.Nanoseconds() +
+		t.synchronisationDeadlineTimestamp.Sub(time.Now()).Nanoseconds()
+
+	if t.frame.Index == kInitialTimeFrameIndex {
 		response = responses.NewResponseTimeFrame(
 			request,
-			t.frame.Index,
-			uint64(t.nextFrameTimeLeft().Nanoseconds()))
+			0,
+			uint64(kNextFrameTimeLeft))
 
 	} else {
 		response = responses.NewResponseTimeFrame(
 			request,
 			t.frame.Index,
-			0)
+			uint64(kNextFrameTimeLeft))
 	}
 
 	select {
@@ -195,12 +290,12 @@ func (t *Timer) processTick() {
 		nextFrameNumber = 0
 	}
 
-	// Important!
+	// Warn!
 	// New event always must replace previous one.
-	// Do not update event's fields directly.
+	// Do not update event's fields directly!
 	t.frame = &EventTimeFrameEnd{
-		Index:         nextFrameNumber,
-		Configuration: t.frame.Configuration,
+		Index: nextFrameNumber,
+		Conf:  t.frame.Conf,
 	}
 
 	select {
@@ -208,72 +303,70 @@ func (t *Timer) processTick() {
 		{
 		}
 	default:
-		return
 	}
 }
 
+// nextFrameTimeLeft returns time duration to the next time frame.
+// Might be called several times during frame processing:
+// each time the result would be les than the previous,
+// so it is ok for events to interrupt internal events loop.
 func (t *Timer) nextFrameTimeLeft() (d time.Duration) {
-	//defer func() {
-	//	t.log().Debug(d)
-	//}()
-
 	timeLeft := t.nextFrameTimestamp.Sub(time.Now())
 	if timeLeft <= 0 {
 		t.nextFrameTimestamp = time.Now().Add(
 			common.AverageBlockGenerationTimeRange).Add(
-			(timeLeft * time.Nanosecond) * -1)
+			timeLeft * time.Nanosecond * -1)
 
 		return t.nextFrameTimeLeft()
 	}
 
 	return timeLeft
-	//
-	//if t.nextFrameNanosecondsLeft.Nanoseconds() < common.AverageBlockGenerationTimeRange.Nanoseconds() {
-	//	tmp := t.nextFrameNanosecondsLeft
-	//	t.nextFrameNanosecondsLeft = common.AverageBlockGenerationTimeRange
-	//	return tmp
-	//}
-	//
-	//return common.AverageBlockGenerationTimeRange
 }
 
 func (t *Timer) reconfigureFrames(e *external.EventConfigurationChanged) {
-	// todo: implement
+	// todo: implement on the ethereum connection implementation stage
 }
 
-func (t *Timer) processMajorityAndCalculateAverageNextFrameTTL(TTLs []uint64) uint64 {
-	if len(TTLs) == 0 {
+// processMajorityAndCalculateAverageNextFrameTTL returns average time offset.
+// Returns 0 in case if no offset is present if offsets.
+func (t *Timer) processMajorityAndCalculateAverageNextFrameTTL(majorityOfTimeOffsets []uint64) uint64 {
+	if len(majorityOfTimeOffsets) == 0 {
 		return 0
 	}
 
-	// todo: Sort the sequence.
-	// todo: Accept only majority of votes, median
-	//  (K%, K == consensus count).
+	// todo: Accept only majority of votes, (median, consensus)
+	//       (K%, K == consensus count).
 
 	var total uint64 = 0
-	for _, ttl := range TTLs {
+	for _, ttl := range majorityOfTimeOffsets {
 		total += ttl
 	}
 
-	return total / uint64(len(TTLs))
+	return total / uint64(len(majorityOfTimeOffsets))
 }
 
-func (t *Timer) findMajorityOfFrameResponses() (majority []uint64, err error) {
-	totalResponsesPresent := len(t.IncomingResponsesTimeFrame)
-	if totalResponsesPresent == 0 {
-		return nil, common.ErrEmptySequence
+// processMajorityOfFrameResponses processes collected time frames responses,
+// finds the majority of the responses, checks if majority has reached the consensus,
+// and collects time offsets of the observers, that has fit into the majority.
+// Returns error in case if consensus has not been reached.
+func (t *Timer) processMajorityOfFrameResponses() (
+	timeOffsetNanoseconds uint64, nextFrameIndex uint16, collectedResponsesCount uint16, err error) {
+	collectedResponsesCount = uint16(len(t.IncomingResponsesTimeFrame))
+	if collectedResponsesCount == 0 {
+		return 0, 0, 0, common.ErrEmptySequence
 	}
 
 	rates := make(map[uint16]*[]uint64)
 
 	var (
+		i                  uint16
 		topFrameIndex      uint16
 		topFrameVotesCount = 0
 		currentTTLsCount   = 0
+		now                = time.Now()
 	)
 
-	now := time.Now()
-	for i := 0; i < totalResponsesPresent; i++ {
+	for i = 0; i < collectedResponsesCount; i++ {
 		vote := <-t.IncomingResponsesTimeFrame
 		frameIndex := vote.FrameIndex
 
@@ -303,16 +396,21 @@ func (t *Timer) findMajorityOfFrameResponses() (majority []uint64, err error) {
 	}
 
 	m, _ := rates[topFrameIndex]
+	timeOffsetNanoseconds = t.processMajorityAndCalculateAverageNextFrameTTL(*m)
 
-	nextFrameIndex := topFrameIndex + 1
+	frameOffset := 0
+	if timeOffsetNanoseconds > uint64(common.AverageBlockGenerationTimeRange.Nanoseconds()) {
+		frameOffset = 1
+	}
+
+	nextFrameIndex = topFrameIndex + uint16(frameOffset)
 	if nextFrameIndex >= common.ObserversMaxCount {
 		nextFrameIndex = 0
 	}
 
-	t.frame = &EventTimeFrameEnd{Index: nextFrameIndex}
-	return *m, nil
+	return
 }
 
 func (t *Timer) log() *log.Entry {
-	return log.WithFields(log.Fields{"subsystem": "Timer"})
+	return log.WithFields(log.Fields{"subsystem": "timer"})
 }

@@ -38,7 +38,7 @@ func New(conf *settings.Settings) (core *Core, err error) {
 	producer, err := chain.NewBlocksProducer(conf, reporter, k)
 
 	core = &Core{
-		timer: timer.New(reporter),
+		timer: timer.New(conf, reporter),
 
 		Settings: conf,
 		Keystore: k,
@@ -236,10 +236,10 @@ func (c *Core) dispatchDataFlows(errors chan error) {
 
 func (c *Core) processIncomingRequest(r requests.Request, errors chan error) {
 	switch r.(type) {
-	case *requests.RequestTimeFrames:
+	case *requests.RequestSynchronisationTimeFrames:
 		{
 			select {
-			case c.timer.IncomingRequestsTimeFrames <- r.(*requests.RequestTimeFrames):
+			case c.timer.IncomingRequestsTimeFrames <- r.(*requests.RequestSynchronisationTimeFrames):
 				{
 
 				}

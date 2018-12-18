@@ -172,7 +172,7 @@ func (r *Receiver) parseAndRouteData(data []byte) (err error) {
 
 	case DataTypeRequestTimeFrames:
 		{
-			request := &requests.RequestTimeFrames{}
+			request := &requests.RequestSynchronisationTimeFrames{}
 			err = request.UnmarshalBinary(data[1:])
 			if err != nil {
 				return
