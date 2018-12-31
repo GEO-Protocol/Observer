@@ -1,6 +1,9 @@
 package timer
 
-import "geo-observers-blockchain/core/network/external"
+import (
+	"geo-observers-blockchain/core/network/external"
+	"time"
+)
 
 // EventTimeFrameEnd is emitted each time when next block frame is closing.
 type EventTimeFrameEnd struct {
@@ -10,6 +13,9 @@ type EventTimeFrameEnd struct {
 	Index uint16
 
 	Conf *external.Configuration
+
+	// See documentation for constants.BlockGenerationSilencePeriod.
+	SilencePeriodTimestamp time.Time
 }
 
 // EventTickerStarted is emitted each time when internal timer ticker is started,

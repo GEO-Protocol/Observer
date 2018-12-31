@@ -1,16 +1,22 @@
-package types
+package hash
 
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"geo-observers-blockchain/core/common/errors"
 )
 
 const (
-	HashSize = 32
+	BytesSize = 32
 )
 
+// todo: replace by sha256 by blake2b 512
+// todo: add project specific salt
+// todo: think about custom round-specific salt,
+//       to prevent usage or pre generated hash tables to brute the hashes.
+
 type SHA256Container struct {
-	Bytes [HashSize]byte
+	Bytes [BytesSize]byte
 }
 
 func NewSHA256Container(data []byte) SHA256Container {
@@ -20,15 +26,15 @@ func NewSHA256Container(data []byte) SHA256Container {
 }
 
 func (h *SHA256Container) MarshalBinary() (data []byte, err error) {
-	return h.Bytes[:HashSize], nil
+	return h.Bytes[:BytesSize], nil
 }
 
 func (h *SHA256Container) UnmarshalBinary(data []byte) error {
-	if copy(h.Bytes[:], data[:HashSize]) == HashSize {
+	if copy(h.Bytes[:], data[:BytesSize]) == BytesSize {
 		return nil
 
 	} else {
-		return ErrorInvalidCopyOperation
+		return errors.InvalidCopyOperation
 
 	}
 }

@@ -5,7 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
-	"geo-observers-blockchain/core/common/types"
+	"geo-observers-blockchain/core/common/types/hash"
 	"geo-observers-blockchain/core/crypto/ecdsa"
 	"io/ioutil"
 	"os"
@@ -35,17 +35,17 @@ func New() (keystore *KeyStore, err error) {
 	return
 }
 
-func (k *KeyStore) SignHash(h types.SHA256Container) (signature *ecdsa.Signature, err error) {
+func (k *KeyStore) SignHash(h hash.SHA256Container) (signature *ecdsa.Signature, err error) {
 	signature = &ecdsa.Signature{}
 	signature.R, signature.S, err = e.Sign(rand.Reader, k.pkey, h.Bytes[:])
 	return
 }
 
-func (k *KeyStore) CheckOwnSignature(h types.SHA256Container, sig ecdsa.Signature) bool {
+func (k *KeyStore) CheckOwnSignature(h hash.SHA256Container, sig ecdsa.Signature) bool {
 	return e.Verify(&k.pkey.PublicKey, h.Bytes[:], sig.R, sig.S)
 }
 
-func (k *KeyStore) CheckExternalSignature(h types.SHA256Container, sig ecdsa.Signature, pubKey *e.PublicKey) bool {
+func (k *KeyStore) CheckExternalSignature(h hash.SHA256Container, sig ecdsa.Signature, pubKey *e.PublicKey) bool {
 	return e.Verify(pubKey, h.Bytes[:], sig.R, sig.S)
 }
 

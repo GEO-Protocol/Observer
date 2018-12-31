@@ -1,13 +1,13 @@
 package responses
 
 import (
-	"geo-observers-blockchain/core/requests"
+	"geo-observers-blockchain/core/network/communicator/observers/requests"
 	"geo-observers-blockchain/core/utils"
 	"time"
 )
 
 type ResponseTimeFrame struct {
-	request requests.Request
+	*response
 
 	FrameIndex      uint16
 	NanosecondsLeft uint64
@@ -17,9 +17,9 @@ type ResponseTimeFrame struct {
 	// todo: add observer signature to prevent data obfuscation
 }
 
-func NewResponseTimeFrame(r requests.Request, index uint16, nanosecondsLeft uint64) *ResponseTimeFrame {
+func NewResponseTimeFrame(r requests.Request, observerIndex, index uint16, nanosecondsLeft uint64) *ResponseTimeFrame {
 	return &ResponseTimeFrame{
-		request:         r,
+		response:        newResponse(r, observerIndex),
 		FrameIndex:      index,
 		NanosecondsLeft: nanosecondsLeft,
 	}

@@ -2,9 +2,10 @@ package timer
 
 import (
 	"geo-observers-blockchain/core/common"
+	errors2 "geo-observers-blockchain/core/common/errors"
+	"geo-observers-blockchain/core/network/communicator/observers/requests"
+	"geo-observers-blockchain/core/network/communicator/observers/responses"
 	"geo-observers-blockchain/core/network/external"
-	"geo-observers-blockchain/core/requests"
-	"geo-observers-blockchain/core/responses"
 	"geo-observers-blockchain/core/settings"
 	log "github.com/sirupsen/logrus"
 	"math"
@@ -15,7 +16,8 @@ import (
 //       to prevent permanent delta increasing and time frames shifting.
 
 const (
-	kSynchronisationTimoutSeconds = 20
+	// todo: set to 30 seconds
+	kSynchronisationTimoutSeconds = 1
 
 	// WARN!
 	// Initial time frame index can't be 0, because it is valid index.
@@ -88,7 +90,7 @@ func New(settings *settings.Settings, reporter *external.Reporter) *Timer {
 		IncomingRequestsTimeFrames: make(chan *requests.RequestSynchronisationTimeFrames, 1),
 
 		// Internal events bus is used to control and to interrupt internal events loop.
-		internalEventsBus: make(chan interface{}),
+		internalEventsBus: make(chan interface{}, 1),
 
 		settings: settings,
 
@@ -110,13 +112,13 @@ func (t *Timer) Run(errors chan error) {
 		case timeFramesRequest := <-t.IncomingRequestsTimeFrames:
 			{
 				err := t.processTimeFrameRequest(timeFramesRequest)
-				common.SendErrorIfAny(err, errors)
+				errors2.SendErrorIfAny(err, errors)
 			}
 
 		case event := <-t.internalEventsBus:
 			{
 				err := t.processInternalEvent(event)
-				common.SendErrorIfAny(err, errors)
+				errors2.SendErrorIfAny(err, errors)
 			}
 		}
 	}
@@ -134,13 +136,13 @@ func (t *Timer) Run(errors chan error) {
 		case timeFramesRequest := <-t.IncomingRequestsTimeFrames:
 			{
 				err := t.processTimeFrameRequest(timeFramesRequest)
-				common.SendErrorIfAny(err, errors)
+				errors2.SendErrorIfAny(err, errors)
 			}
 
 		case event := <-t.internalEventsBus:
 			{
 				err := t.processInternalEvent(event)
-				common.SendErrorIfAny(err, errors)
+				errors2.SendErrorIfAny(err, errors)
 			}
 		}
 	}
@@ -151,15 +153,16 @@ func (t *Timer) Run(errors chan error) {
 	// when 2 or more blocks was generated during synchronisation.
 	//
 	// todo: add support of short blocks timeouts.
-	var (
-		kMinimalTimeFramesExchangeTimeoutSeconds = 20
-		kMinimalAppropriateTimeoutSeconds        = int(common.AverageBlockGenerationTimeRange.Seconds()) -
-			kMinimalTimeFramesExchangeTimeoutSeconds
-	)
 
-	if kSynchronisationTimoutSeconds >= kMinimalAppropriateTimeoutSeconds {
-		panic(ErrInvalidSynchronisationTimeout)
-	}
+	// todo: bring me back
+	//var (
+	//	kMinimalTimeFramesExchangeTimeoutSeconds = 20
+	//	kMinimalAppropriateTimeoutSeconds        = int(constants.AverageBlockGenerationTimeRange.Seconds()) -
+	//		kMinimalTimeFramesExchangeTimeoutSeconds
+	//)
+	//if kSynchronisationTimoutSeconds >= kMinimalAppropriateTimeoutSeconds {
+	//	panic(ErrInvalidSynchronisationTimeout)
+	//}
 
 	// Attempt to sync with other observers before any operations processing.
 	// It is asynchronous operation, so it must be launched in goroutine
@@ -212,7 +215,7 @@ func (t *Timer) syncWithOtherObservers() {
 	collectResponses()
 
 	nextFrameOffset, nextFrameIndex, responsesCollected, err := t.processMajorityOfFrameResponses()
-	if err == common.ErrEmptySequence {
+	if err == errors2.EmptySequence {
 		t.log().Debug(
 			"Time frames synchronisation is done. " +
 				"NO RESPONSES was received and took into account.")
@@ -240,7 +243,7 @@ func (t *Timer) processInternalEvent(event interface{}) error {
 		}
 
 	default:
-		return common.ErrNilParameter
+		return errors2.NilParameter
 	}
 }
 
@@ -262,15 +265,22 @@ func (t *Timer) processTimeFrameRequest(request *requests.RequestSynchronisation
 	kNextFrameTimeLeft := common.AverageBlockGenerationTimeRange.Nanoseconds() +
 		t.synchronisationDeadlineTimestamp.Sub(time.Now()).Nanoseconds()
 
+	conf, err := t.confReporter.GetCurrentConfiguration()
+	if err != nil {
+		return err
+	}
+
 	if t.frame.Index == kInitialTimeFrameIndex {
 		response = responses.NewResponseTimeFrame(
 			request,
+			conf.CurrentObserverIndex,
 			0,
 			uint64(kNextFrameTimeLeft))
 
 	} else {
 		response = responses.NewResponseTimeFrame(
 			request,
+			conf.CurrentObserverIndex,
 			t.frame.Index,
 			uint64(kNextFrameTimeLeft))
 	}
@@ -280,7 +290,7 @@ func (t *Timer) processTimeFrameRequest(request *requests.RequestSynchronisation
 		return nil
 
 	default:
-		return common.ErrChannelTransferringFailed
+		return errors2.ChannelTransferringFailed
 	}
 }
 
@@ -294,8 +304,9 @@ func (t *Timer) processTick() {
 	// New event always must replace previous one.
 	// Do not update event's fields directly!
 	t.frame = &EventTimeFrameEnd{
-		Index: nextFrameNumber,
-		Conf:  t.frame.Conf,
+		Index:                  nextFrameNumber,
+		Conf:                   t.frame.Conf,
+		SilencePeriodTimestamp: time.Now().Add(-common.BlockGenerationSilencePeriod),
 	}
 
 	select {
@@ -353,7 +364,7 @@ func (t *Timer) processMajorityOfFrameResponses() (
 	timeOffsetNanoseconds uint64, nextFrameIndex uint16, collectedResponsesCount uint16, err error) {
 	collectedResponsesCount = uint16(len(t.IncomingResponsesTimeFrame))
 	if collectedResponsesCount == 0 {
-		return 0, 0, 0, common.ErrEmptySequence
+		return 0, 0, 0, errors2.EmptySequence
 	}
 
 	rates := make(map[uint16]*[]uint64)

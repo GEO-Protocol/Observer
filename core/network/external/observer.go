@@ -2,7 +2,7 @@ package external
 
 import (
 	"crypto/ecdsa"
-	"geo-observers-blockchain/core/common/types"
+	"geo-observers-blockchain/core/common/types/hash"
 	"geo-observers-blockchain/core/utils"
 )
 
@@ -21,7 +21,7 @@ func NewObserver(host string, port uint16, pubKey *ecdsa.PublicKey) *Observer {
 	}
 }
 
-func (o *Observer) Hash() types.SHA256Container {
+func (o *Observer) Hash() hash.SHA256Container {
 	xData := o.PubKey.X.Bytes()
 	yData := o.PubKey.Y.Bytes()
 	hostData := []byte(o.Host)
@@ -33,5 +33,5 @@ func (o *Observer) Hash() types.SHA256Container {
 		len(portData)
 
 	data := make([]byte, 0, dataSize)
-	return types.NewSHA256Container(data)
+	return hash.NewSHA256Container(data)
 }

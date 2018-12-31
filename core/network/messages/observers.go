@@ -2,7 +2,7 @@ package messages
 
 import (
 	"geo-observers-blockchain/core/common"
-	"geo-observers-blockchain/core/common/types"
+	"geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/crypto/ecdsa"
 	"geo-observers-blockchain/core/utils"
 )
@@ -26,16 +26,16 @@ func (s *SignatureMessage) MarshalBinary() (data []byte, err error) {
 
 func (s *SignatureMessage) UnmarshalBinary(data []byte) (err error) {
 	if data == nil {
-		return common.ErrInvalidDataFormat
+		return errors.InvalidDataFormat
 	}
 
-	s.AddresseeObserverIndex, err = utils.UnmarshalUint16(data[:types.Uint16ByteSize])
+	s.AddresseeObserverIndex, err = utils.UnmarshalUint16(data[:common.Uint16ByteSize])
 	if err != nil {
 		return
 	}
 
 	s.Signature = &ecdsa.Signature{}
-	return s.Signature.UnmarshalBinary(data[types.Uint16ByteSize:])
+	return s.Signature.UnmarshalBinary(data[common.Uint16ByteSize:])
 }
 
 // --------------------------------------------------------------------------------------------------------------------

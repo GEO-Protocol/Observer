@@ -2,7 +2,7 @@ package lamport
 
 import (
 	"geo-observers-blockchain/core/common"
-	"geo-observers-blockchain/core/common/types"
+	"geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/utils"
 )
 
@@ -20,14 +20,14 @@ func (s *Signature) MarshalBinary() (data []byte, err error) {
 
 func (s *Signature) UnmarshalBinary(data []byte) error {
 	if len(data) < SignatureBytesSize {
-		return common.ErrInvalidDataFormat
+		return errors.InvalidDataFormat
 	}
 
 	if copy(s.Bytes[:], data[:SignatureBytesSize]) == SignatureBytesSize {
 		return nil
 
 	} else {
-		return types.ErrorInvalidCopyOperation
+		return errors.InvalidCopyOperation
 
 	}
 }
@@ -35,7 +35,7 @@ func (s *Signature) UnmarshalBinary(data []byte) error {
 // --------------------------------------------------------------------------------------------------------------------
 
 const (
-	SignaturesMaxCount = common.GeoTransactionMaxParticipantsCount
+	SignaturesMaxCount = common.GEOTransactionMaxParticipantsCount
 )
 
 type Signatures struct {
@@ -44,7 +44,7 @@ type Signatures struct {
 
 func (s *Signatures) Add(sig *Signature) error {
 	if sig == nil {
-		return common.ErrNilParameter
+		return errors.NilParameter
 	}
 
 	if s.Count() < SignaturesMaxCount {
@@ -52,7 +52,7 @@ func (s *Signatures) Add(sig *Signature) error {
 		return nil
 	}
 
-	return common.ErrMaxCountReached
+	return errors.MaxCountReached
 }
 
 func (s *Signatures) Count() uint16 {
@@ -79,7 +79,7 @@ func (s *Signatures) MarshalBinary() (data []byte, err error) {
 }
 
 func (s *Signatures) UnmarshalBinary(data []byte) (err error) {
-	count, err := utils.UnmarshalUint16(data[:types.Uint16ByteSize])
+	count, err := utils.UnmarshalUint16(data[:common.Uint16ByteSize])
 	if err != nil {
 		return
 	}
@@ -90,7 +90,7 @@ func (s *Signatures) UnmarshalBinary(data []byte) (err error) {
 	}
 
 	var (
-		offset uint32 = types.Uint16ByteSize
+		offset uint32 = common.Uint16ByteSize
 		i      uint16
 	)
 

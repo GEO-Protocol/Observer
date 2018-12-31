@@ -6,7 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
-	"geo-observers-blockchain/core/common"
+	"geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/settings"
 	"io/ioutil"
 	"os"
@@ -31,6 +31,14 @@ func NewReporter(settings *settings.Settings) *Reporter {
 
 // todo: cache the results internally
 func (r *Reporter) GetCurrentConfiguration() (*Configuration, error) {
+	configuration = r.temptStaticConfiguration()
+
+	for i, observer := range configuration.Observers {
+		if observer.Host == r.settings.Observers.GNS.Host && observer.Port == r.settings.Observers.GNS.Port {
+			configuration.CurrentObserverIndex = uint16(i)
+		}
+	}
+
 	return r.temptStaticConfiguration(), nil
 }
 
@@ -50,7 +58,7 @@ func (r *Reporter) GetCurrentObserverNumber() (uint16, error) {
 		}
 	}
 
-	return 0, common.ErrNilParameter
+	return 0, errors.NilParameter
 }
 
 // todo: sort observers in strict order!

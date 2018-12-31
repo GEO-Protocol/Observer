@@ -10,7 +10,7 @@ var (
 	ErrBlocksCollision = utils.Error("chain", "blocks collision")
 )
 
-// todo: consider dropping claims and TSLs that are not needed any more.
+// todo: consider dropping claims and TSLsHashes that are not needed any more.
 type Chain struct {
 	// Time when last block was generated/inserted.
 	// todo: move this into block info
@@ -42,6 +42,8 @@ func (chain *Chain) Height() uint64 {
 }
 
 func (chain *Chain) Append(bs *BlockSigned) (err error) {
+	// todo: add hashes check for collision detection
+
 	if chain.storage.HasIndex(bs.Data.Height) {
 		return ErrBlocksCollision
 	}
@@ -55,7 +57,7 @@ func (chain *Chain) Append(bs *BlockSigned) (err error) {
 }
 
 // todo: use this method instead of method in block producer
-func (chain *Chain) Validate(block *ProposedBlock) error {
+func (chain *Chain) Validate(block *ProposedBlockData) error {
 	return nil
 }
 

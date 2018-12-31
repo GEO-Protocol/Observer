@@ -156,7 +156,7 @@ func TestTransactionSignaturesLists_MarshallBinary_OneTSL_1024Signatures(t *test
 	}
 }
 
-// Creates transactions signatures list with maximum possible TSLs included.
+// Creates transactions signatures list with maximum possible TSLsHashes included.
 // Serializes it, deserializes it back and then checks data equality.
 //
 // WARN: Consumes more than 182MB of memory.

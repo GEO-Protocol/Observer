@@ -2,26 +2,27 @@ package geo
 
 import (
 	"geo-observers-blockchain/core/common"
-	"geo-observers-blockchain/core/common/types"
+	"geo-observers-blockchain/core/common/errors"
+	"geo-observers-blockchain/core/common/types/transactions"
 	"geo-observers-blockchain/core/crypto/lamport"
 	"geo-observers-blockchain/core/utils"
 )
 
 type Claim struct {
-	TxUUID  *types.TransactionUUID
+	TxUUID  *transactions.TransactionUUID
 	PubKeys *lamport.PubKeys
 }
 
 func NewClaim() *Claim {
 	return &Claim{
-		TxUUID:  types.NewTransactionUUID(),
+		TxUUID:  transactions.NewTransactionUUID(),
 		PubKeys: &lamport.PubKeys{},
 	}
 }
 
 func (claim *Claim) MarshalBinary() (data []byte, err error) {
 	if claim.TxUUID == nil || claim.PubKeys == nil {
-		return nil, common.ErrNilInternalDataStructure
+		return nil, errors.NilInternalDataStructure
 	}
 
 	transactionUUIDBinary, err := claim.TxUUID.MarshalBinary()
@@ -41,20 +42,22 @@ func (claim *Claim) MarshalBinary() (data []byte, err error) {
 func (claim *Claim) UnmarshalBinary(data []byte) (err error) {
 	const (
 		offsetUUIDData = 0
-		offsetKeysData = offsetUUIDData + types.TransactionUUIDSize
+		offsetKeysData = offsetUUIDData + common.TransactionUUIDSize
 
-		minDataLength = offsetKeysData + types.Uint16ByteSize
+		minDataLength = offsetKeysData + common.Uint16ByteSize
 	)
 
 	if len(data) < minDataLength {
-		return common.ErrInvalidDataFormat
+		return errors.InvalidDataFormat
 	}
 
-	err = claim.TxUUID.UnmarshalBinary(data[:types.TransactionUUIDSize])
+	claim.TxUUID = transactions.NewTransactionUUID()
+	err = claim.TxUUID.UnmarshalBinary(data[:common.TransactionUUIDSize])
 	if err != nil {
 		return
 	}
 
+	claim.PubKeys = &lamport.PubKeys{}
 	err = claim.PubKeys.UnmarshalBinary(data[offsetKeysData:])
 	if err != nil {
 		return
@@ -75,7 +78,7 @@ type Claims struct {
 
 func (c *Claims) Add(claim *Claim) error {
 	if claim == nil {
-		return common.ErrNilParameter
+		return errors.NilParameter
 	}
 
 	if c.Count() < ClaimsMaxCount {
@@ -83,7 +86,7 @@ func (c *Claims) Add(claim *Claim) error {
 		return nil
 	}
 
-	return common.ErrMaxCountReached
+	return errors.MaxCountReached
 }
 
 func (c *Claims) Count() uint16 {
@@ -92,12 +95,12 @@ func (c *Claims) Count() uint16 {
 
 // Format:
 // 2B - Total claims count.
-// [4B, 4B, ... 4B] - Claims sizes.
-// [NB, NB, ... NB] - Claims bodies.
+// [4B, 4B, ... 4B] - ClaimsHashes sizes.
+// [NB, NB, ... NB] - ClaimsHashes bodies.
 func (c *Claims) MarshalBinary() (data []byte, err error) {
 	var (
-		initialDataSize = types.Uint16ByteSize + // Total claims count.
-			types.Uint16ByteSize*c.Count() // Claims sizes fields.
+		initialDataSize = common.Uint16ByteSize + // Total claims count.
+			common.Uint16ByteSize*c.Count() // ClaimsHashes sizes fields.
 	)
 
 	data = make([]byte, 0, initialDataSize)
@@ -118,7 +121,7 @@ func (c *Claims) MarshalBinary() (data []byte, err error) {
 		// Append claim size directly to the data stream.
 		data = append(data, utils.MarshalUint32(uint32(len(claimBinary)))...)
 
-		// Claims would be attached to the data after all claims size fields would be written.
+		// ClaimsHashes would be attached to the data after all claims size fields would be written.
 		claims = append(claims, claimBinary)
 	}
 
@@ -127,7 +130,7 @@ func (c *Claims) MarshalBinary() (data []byte, err error) {
 }
 
 func (c *Claims) UnmarshalBinary(data []byte) (err error) {
-	count, err := utils.UnmarshalUint16(data[:types.Uint16ByteSize])
+	count, err := utils.UnmarshalUint16(data[:common.Uint16ByteSize])
 	if err != nil {
 		return
 	}
@@ -144,18 +147,18 @@ func (c *Claims) UnmarshalBinary(data []byte) (err error) {
 
 	claimsSizes := make([]uint32, 0, count)
 
-	var offset uint32 = types.Uint16ByteSize
+	var offset uint32 = common.Uint16ByteSize
 	for i = 0; i < count; i++ {
-		claimSize, err := utils.UnmarshalUint32(data[offset : offset+types.Uint32ByteSize])
+		claimSize, err := utils.UnmarshalUint32(data[offset : offset+common.Uint32ByteSize])
 		if err != nil {
 			return err
 		}
 		if claimSize == 0 {
-			err = common.ErrInvalidDataFormat
+			err = errors.InvalidDataFormat
 		}
 
 		claimsSizes = append(claimsSizes, claimSize)
-		offset += types.Uint32ByteSize
+		offset += common.Uint32ByteSize
 	}
 
 	for i = 0; i < count; i++ {

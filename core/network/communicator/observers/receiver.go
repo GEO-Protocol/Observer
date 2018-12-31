@@ -5,15 +5,17 @@ import (
 	"bytes"
 	"fmt"
 	"geo-observers-blockchain/core/chain"
-	"geo-observers-blockchain/core/common"
+	"geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/geo"
+	"geo-observers-blockchain/core/network/communicator/observers/constants"
+	"geo-observers-blockchain/core/network/communicator/observers/requests"
+	"geo-observers-blockchain/core/network/communicator/observers/responses"
 	"geo-observers-blockchain/core/network/messages"
-	"geo-observers-blockchain/core/requests"
-	"geo-observers-blockchain/core/responses"
 	"geo-observers-blockchain/core/utils"
 	log "github.com/sirupsen/logrus"
 	"io"
 	"net"
+	"reflect"
 	"strings"
 	"time"
 )
@@ -25,7 +27,7 @@ type Receiver struct {
 	TSLs   chan geo.TransactionSignaturesList
 	//BlockSignatures chan *chain.BlockSignatures
 	BlockSignatures chan *messages.SignatureMessage
-	BlocksProposed  chan *chain.ProposedBlock
+	BlocksProposed  chan *chain.ProposedBlockData
 	//BlockCandidates chan *chain.BlockSigned
 	Requests  chan requests.Request
 	Responses chan responses.Response
@@ -41,7 +43,7 @@ func NewReceiver() *Receiver {
 		TSLs:   make(chan geo.TransactionSignaturesList, ChannelBufferSize),
 		//BlockSignatures: make(chan *chain.BlockSignatures, ChannelBufferSize),
 		BlockSignatures: make(chan *messages.SignatureMessage, ChannelBufferSize),
-		BlocksProposed:  make(chan *chain.ProposedBlock, ChannelBufferSize),
+		BlocksProposed:  make(chan *chain.ProposedBlockData, ChannelBufferSize),
 		//BlockCandidates: make(chan *chain.BlockSigned, ChannelBufferSize),
 		Requests:  make(chan requests.Request, ChannelBufferSize),
 		Responses: make(chan responses.Response, ChannelBufferSize),
@@ -96,7 +98,7 @@ func (r *Receiver) handleConnection(conn net.Conn, errors chan<- error) {
 			return
 		}
 
-		r.log().Debug("[TX<=] ", len(dataPackage), "B received, ", conn.RemoteAddr())
+		r.logIngress(len(dataPackage), conn)
 
 		err = r.parseAndRouteData(dataPackage)
 		if err != nil {
@@ -117,7 +119,7 @@ func (r *Receiver) receiveDataPackage(reader *bufio.Reader) (data []byte, err er
 		return
 	}
 	if bytesRead != kPackageSizeHeaderBytes {
-		return nil, common.ErrBufferDiscarding
+		return nil, errors.BufferDiscarding
 	}
 
 	packageSize, err := utils.UnmarshalUint32(packageSizeMarshaled)
@@ -125,20 +127,51 @@ func (r *Receiver) receiveDataPackage(reader *bufio.Reader) (data []byte, err er
 		return
 	}
 
+	var offset uint32 = 0
 	data = make([]byte, packageSize, packageSize)
 	for {
-		_, err := reader.Read(data)
+		bytesReceived, err := reader.Read(data[offset:])
 		if err != nil {
 			return nil, err
 		}
 
-		if len(data) == int(packageSize) {
+		offset += uint32(bytesReceived)
+		if offset == packageSize {
 			return data, nil
 		}
 	}
 }
 
 func (r *Receiver) parseAndRouteData(data []byte) (err error) {
+
+	processRequest := func(request requests.Request) (err error) {
+		r.log().Debug(reflect.TypeOf(request).String(), " received")
+
+		err = request.UnmarshalBinary(data[1:])
+		if err != nil {
+			return
+		}
+
+		r.Requests <- request
+		return
+	}
+
+	processResponse := func(response responses.Response, customHandler func(responses.Response)) (err error) {
+		r.log().Debug(reflect.TypeOf(response).String(), " received")
+
+		err = response.UnmarshalBinary(data[1:])
+		if err != nil {
+			return
+		}
+
+		if customHandler != nil {
+			customHandler(response)
+		}
+
+		r.Responses <- response
+		return
+	}
+
 	reader := bytes.NewReader(data)
 	dataTypeHeader, err := reader.ReadByte()
 	if err != nil {
@@ -146,9 +179,10 @@ func (r *Receiver) parseAndRouteData(data []byte) (err error) {
 	}
 
 	switch uint8(dataTypeHeader) {
-	case DataTypeBlockProposal:
+	case constants.DataTypeBlockProposal:
 		{
-			block := &chain.ProposedBlock{}
+			// todo: reformat to the request/response
+			block := &chain.ProposedBlockData{}
 			err = block.UnmarshalBinary(data[1:])
 			if err != nil {
 				return
@@ -158,8 +192,9 @@ func (r *Receiver) parseAndRouteData(data []byte) (err error) {
 			return
 		}
 
-	case DataTypeBlockSignature:
+	case constants.DataTypeBlockSignature:
 		{
+			// todo: reformat to the request/response
 			message := &messages.SignatureMessage{}
 			err = message.UnmarshalBinary(data[1:])
 			if err != nil {
@@ -170,38 +205,44 @@ func (r *Receiver) parseAndRouteData(data []byte) (err error) {
 			return
 		}
 
-	case DataTypeRequestTimeFrames:
+	// Timer
+	case constants.DataTypeRequestTimeFrames:
 		{
-			request := &requests.RequestSynchronisationTimeFrames{}
-			err = request.UnmarshalBinary(data[1:])
-			if err != nil {
-				return
-			}
-
-			r.Requests <- request
-			return
+			return processRequest(&requests.RequestSynchronisationTimeFrames{})
 		}
 
-	case DataTypeResponseTimeFrame:
+	case constants.DataTypeResponseTimeFrame:
 		{
-			r.log().Info("Time Frame received")
+			return processResponse(&responses.ResponseTimeFrame{}, func(response responses.Response) {
+				// Time frame response MUST be extended with time of receiving.
+				// It would be used further for time offset corrections.
+				response.(*responses.ResponseTimeFrame).Received = time.Now()
+			})
+		}
 
-			response := &responses.ResponseTimeFrame{}
-			err = response.UnmarshalBinary(data[1:])
-			if err != nil {
-				return
-			}
+	// Pools instances
+	case constants.DataTypeRequestClaimBroadcast:
+		{
+			return processRequest(&requests.RequestPoolInstanceBroadcast{})
+		}
 
-			// Time frame response MUST be extended with time of receiving.
-			// It would be used further for time offset corrections.
-			response.Received = time.Now()
+	case constants.DataTypeRequestTSLBroadcast:
+		{
+			return processRequest(&requests.RequestPoolInstanceBroadcast{})
+		}
 
-			r.Responses <- response
-			return
+	case constants.DataTypeResponseClaimApprove:
+		{
+			return processResponse(&responses.ResponseClaimApprove{}, nil)
+		}
+
+	case constants.DataTypeResponseTSLApprove:
+		{
+			return processResponse(&responses.ResponseTSLApprove{}, nil)
 		}
 
 	default:
-		return common.ErrUnexpectedDataType
+		return errors.UnexpectedDataType
 	}
 }
 
@@ -213,6 +254,10 @@ func (r *Receiver) sendEvent(channel chan interface{}, event interface{}) {
 	default:
 		// todo: log error
 	}
+}
+
+func (r *Receiver) logIngress(bytesReceived int, conn net.Conn) {
+	r.log().Debug("[TX<=] ", bytesReceived, "B, ", conn.RemoteAddr())
 }
 
 func (r *Receiver) log() *log.Entry {

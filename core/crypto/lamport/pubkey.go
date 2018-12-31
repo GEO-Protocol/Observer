@@ -2,7 +2,7 @@ package lamport
 
 import (
 	"geo-observers-blockchain/core/common"
-	"geo-observers-blockchain/core/common/types"
+	"geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/utils"
 )
 
@@ -20,14 +20,14 @@ func (h *PubKey) MarshalBinary() (data []byte, err error) {
 
 func (h *PubKey) UnmarshalBinary(data []byte) error {
 	if len(data) < PubKeyBytesSize {
-		return common.ErrInvalidDataFormat
+		return errors.InvalidDataFormat
 	}
 
 	if copy(h.Bytes[:], data[:PubKeyBytesSize]) == PubKeyBytesSize {
 		return nil
 
 	} else {
-		return common.ErrInvalidCopyOperation
+		return errors.InvalidCopyOperation
 
 	}
 }
@@ -35,7 +35,7 @@ func (h *PubKey) UnmarshalBinary(data []byte) error {
 // --------------------------------------------------------------------------------------------------------------------
 
 const (
-	PubKeysMaxCount = common.GeoTransactionMaxParticipantsCount
+	PubKeysMaxCount = common.GEOTransactionMaxParticipantsCount
 )
 
 type PubKeys struct {
@@ -44,7 +44,7 @@ type PubKeys struct {
 
 func (p *PubKeys) Add(key *PubKey) error {
 	if key == nil {
-		return common.ErrNilParameter
+		return errors.NilParameter
 	}
 
 	if p.Count() < PubKeysMaxCount {
@@ -52,7 +52,7 @@ func (p *PubKeys) Add(key *PubKey) error {
 		return nil
 	}
 
-	return common.ErrMaxCountReached
+	return errors.MaxCountReached
 }
 
 func (p *PubKeys) Count() uint16 {
@@ -62,7 +62,7 @@ func (p *PubKeys) Count() uint16 {
 func (p *PubKeys) MarshalBinary() (data []byte, err error) {
 	var (
 		totalBinarySize = p.Count()*PubKeyBytesSize +
-			types.Uint16ByteSize
+			common.Uint16ByteSize
 	)
 
 	data = make([]byte, 0, totalBinarySize)
@@ -81,7 +81,7 @@ func (p *PubKeys) MarshalBinary() (data []byte, err error) {
 }
 
 func (p *PubKeys) UnmarshalBinary(data []byte) (err error) {
-	count, err := utils.UnmarshalUint16(data[:types.Uint16ByteSize])
+	count, err := utils.UnmarshalUint16(data[:common.Uint16ByteSize])
 	if err != nil {
 		return
 	}
@@ -91,7 +91,7 @@ func (p *PubKeys) UnmarshalBinary(data []byte) (err error) {
 		return
 	}
 
-	var offset uint32 = types.Uint16ByteSize
+	var offset uint32 = common.Uint16ByteSize
 	for i := 0; i < int(count); i++ {
 		pubKey := &PubKey{}
 		err = pubKey.UnmarshalBinary(data[offset : offset+PubKeyBytesSize])

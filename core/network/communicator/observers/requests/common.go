@@ -1,13 +1,35 @@
 package requests
 
-import "geo-observers-blockchain/core/utils"
+import (
+	"geo-observers-blockchain/core/common"
+	"geo-observers-blockchain/core/utils"
+)
 
 type request struct {
 	observerNumber uint16
+
+	// If nil - request must be sent to all observers.
+	// Otherwise - contains positional number ob observers,
+	// that should receive the request.
+	destinationObservers []uint16
+}
+
+func newRequest(destinationObservers []uint16) request {
+	if len(destinationObservers) == common.ObserversMaxCount {
+		return request{}
+	}
+
+	return request{
+		destinationObservers: destinationObservers,
+	}
 }
 
 func (r *request) ObserverNumber() uint16 {
 	return r.observerNumber
+}
+
+func (r *request) DestinationObservers() []uint16 {
+	return r.destinationObservers
 }
 
 func (r *request) SetObserverNumber(number uint16) {

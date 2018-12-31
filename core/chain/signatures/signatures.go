@@ -1,8 +1,8 @@
-package chain
+package signatures
 
 import (
 	"geo-observers-blockchain/core/common"
-	"geo-observers-blockchain/core/common/types"
+	"geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/crypto/ecdsa"
 	"geo-observers-blockchain/core/utils"
 )
@@ -24,6 +24,30 @@ func NewIndexedObserversSignatures(count int) *IndexedObserversSignatures {
 	return &IndexedObserversSignatures{
 		Signatures: make([]*ecdsa.Signature, count, count),
 	}
+}
+
+func (s *IndexedObserversSignatures) IsMajorityApprovesCollected() bool {
+	var (
+		positiveVotesPresent = 0
+		negativeVotesPresent = 0
+	)
+
+	for _, sig := range s.Signatures {
+		if sig != nil {
+			positiveVotesPresent++
+			if positiveVotesPresent >= common.ObserversConsensusCount {
+				return true
+			}
+
+		} else {
+			negativeVotesPresent++
+			if negativeVotesPresent >= common.ObserversMaxCount-common.ObserversConsensusCount {
+				return false
+			}
+		}
+	}
+
+	return false
 }
 
 // todo: [enhance] think about little bit compact binary format.
@@ -50,10 +74,10 @@ func (s *IndexedObserversSignatures) MarshalBinary() (data []byte, err error) {
 
 func (s *IndexedObserversSignatures) UnmarshalBinary(data []byte) (err error) {
 	if data == nil {
-		return common.ErrInvalidDataFormat
+		return errors.InvalidDataFormat
 	}
 
-	count, err := utils.UnmarshalUint16(data[:types.Uint16ByteSize])
+	count, err := utils.UnmarshalUint16(data[:common.Uint16ByteSize])
 	if err != nil {
 		return
 	}
@@ -61,18 +85,18 @@ func (s *IndexedObserversSignatures) UnmarshalBinary(data []byte) (err error) {
 	s.Signatures = make([]*ecdsa.Signature, count, 0)
 
 	var (
-		offset        = types.Uint16ByteSize
+		offset        = common.Uint16ByteSize
 		i      uint16 = 0
 	)
 	for i = 0; i < count; i++ {
-		index, err := utils.UnmarshalUint16(data[offset : offset+types.Uint16ByteSize])
-		offset += types.Uint16ByteSize
+		index, err := utils.UnmarshalUint16(data[offset : offset+common.Uint16ByteSize])
+		offset += common.Uint16ByteSize
 		if err != nil {
 			return err
 		}
 
-		size, err := utils.UnmarshalUint16(data[offset : offset+types.Uint16ByteSize])
-		offset += types.Uint16ByteSize
+		size, err := utils.UnmarshalUint16(data[offset : offset+common.Uint16ByteSize])
+		offset += common.Uint16ByteSize
 		if err != nil {
 			return err
 		}
