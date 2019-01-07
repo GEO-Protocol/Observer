@@ -2,21 +2,21 @@ package observers
 
 import (
 	"fmt"
-	"geo-observers-blockchain/core/chain"
-	"geo-observers-blockchain/core/common"
+	errors2 "geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/geo"
+	"geo-observers-blockchain/core/network/communicator/observers/constants"
+	"geo-observers-blockchain/core/network/communicator/observers/requests"
+	"geo-observers-blockchain/core/network/communicator/observers/responses"
 	"geo-observers-blockchain/core/network/external"
-	"geo-observers-blockchain/core/network/messages"
-	"geo-observers-blockchain/core/requests"
-	"geo-observers-blockchain/core/responses"
 	"geo-observers-blockchain/core/settings"
 	"geo-observers-blockchain/core/utils"
 	log "github.com/sirupsen/logrus"
 	"net"
+	"reflect"
 	"time"
 )
 
-// todo: move this to common errors
+// todo: move this to constants errors
 var (
 	ErrEmptyData                     = utils.Error("sender", "invalid data set")
 	ErrCycleDataSending              = utils.Error("sender", "attempt to send the data to itself prevented")
@@ -27,39 +27,26 @@ var (
 	ErrInvalidObserverIndex          = utils.Error("sender", "invalid observer index")
 )
 
-// todo: encrypt traffic between observers
+// todo: move observers list related logic to the sender
+//       (response.observersList)
 type Sender struct {
-	Settings         *settings.Settings
-	ObserversConfRep *external.Reporter
+	OutgoingRequests  chan requests.Request
+	OutgoingResponses chan responses.Response
+	IncomingEvents    chan interface{}
 
-	OutgoingClaims           chan geo.Claim
-	OutgoingTSLs             chan geo.TransactionSignaturesList
-	OutgoingProposedBlocks   chan *chain.ProposedBlock
-	OutgoingBlocksSignatures chan *messages.SignatureMessage
-	OutgoingRequests         chan requests.Request
-	OutgoingResponses        chan responses.Response
-
-	IncomingEvents chan interface{}
-
+	settings    *settings.Settings
+	reporter    *external.Reporter
 	connections *ConnectionsMap
 }
 
-func NewSender(conf *settings.Settings, observersConfigurationReporter *external.Reporter) *Sender {
-	const kChannelBufferSize = 1
-
+func NewSender(conf *settings.Settings, observersConfReporter *external.Reporter) *Sender {
 	return &Sender{
-		Settings:         conf,
-		ObserversConfRep: observersConfigurationReporter,
+		OutgoingRequests:  make(chan requests.Request, 16),
+		OutgoingResponses: make(chan responses.Response, 16),
+		IncomingEvents:    make(chan interface{}, 1),
 
-		OutgoingClaims:           make(chan geo.Claim, kChannelBufferSize),
-		OutgoingTSLs:             make(chan geo.TransactionSignaturesList, kChannelBufferSize),
-		OutgoingProposedBlocks:   make(chan *chain.ProposedBlock, kChannelBufferSize),
-		OutgoingBlocksSignatures: make(chan *messages.SignatureMessage, kChannelBufferSize),
-		OutgoingRequests:         make(chan requests.Request, kChannelBufferSize),
-		OutgoingResponses:        make(chan responses.Response, kChannelBufferSize),
-
-		IncomingEvents: make(chan interface{}, kChannelBufferSize),
-
+		settings:    conf,
+		reporter:    observersConfReporter,
 		connections: NewConnectionsMap(time.Minute * 10),
 	}
 }
@@ -67,6 +54,7 @@ func NewSender(conf *settings.Settings, observersConfigurationReporter *external
 func (s *Sender) Run(host string, port uint16, errors chan<- error) {
 	// Report Ok
 	errors <- nil
+	s.log().Info("Started")
 
 	s.waitAndSendInfo(errors)
 }
@@ -75,46 +63,14 @@ func (s *Sender) waitAndSendInfo(errors chan<- error) {
 
 	processSending := func() {
 		select {
-		case claim := <-s.OutgoingClaims:
-			{
-				// todo: processSending
-				s.log().Info("Claim sent", claim)
-			}
-
-		case tsl := <-s.OutgoingTSLs:
-			{
-				// todo: processSending
-				s.log().Info("TSL sent", tsl)
-			}
-
-		case proposedBlock := <-s.OutgoingProposedBlocks:
-			{
-				s.processBlockProposalSending(proposedBlock, errors)
-			}
-
-		case blockSignature := <-s.OutgoingBlocksSignatures:
-			{
-				s.processBlockSignatureSending(blockSignature, errors)
-			}
-
 		case request := <-s.OutgoingRequests:
-			{
-				s.processRequestSending(request, errors)
-			}
+			s.processRequestSending(request, errors)
 
 		case response := <-s.OutgoingResponses:
-			{
-				s.processResponseSending(response, errors)
-			}
+			s.processResponseSending(response, errors)
 
-		// Events
 		case event := <-s.IncomingEvents:
-			{
-				s.processIncomingEvent(event, errors)
-			}
-
-			// ...
-			// other cases
+			s.processIncomingEvent(event, errors)
 		}
 	}
 
@@ -123,20 +79,21 @@ func (s *Sender) waitAndSendInfo(errors chan<- error) {
 	}
 }
 
+// todo: remove global errors flow
 func (s *Sender) processRequestSending(request requests.Request, errors chan<- error) {
+
 	if request == nil {
-		errors <- common.ErrNilParameter
+		errors <- errors2.NilParameter
 		return
 	}
 
 	// Mark request with observer's number,
 	// so the responder would know to which observer to respond.
-	currentObserverNumber, err := s.ObserversConfRep.GetCurrentObserverNumber()
+	currentObserverIndex, err := s.reporter.GetCurrentObserverIndex()
 	if err != nil {
 		return
 	}
-	request.SetObserverNumber(currentObserverNumber)
-	s.log().Debug(currentObserverNumber)
+	request.SetObserverIndex(currentObserverIndex)
 
 	data, err := request.MarshalBinary()
 	if err != nil {
@@ -144,27 +101,55 @@ func (s *Sender) processRequestSending(request requests.Request, errors chan<- e
 		return
 	}
 
+	send := func(streamType []byte, destinationObservers []uint16) {
+		s.log().WithFields(log.Fields{
+			"Type": reflect.TypeOf(request).String(),
+		}).Debug("Enqueued")
+
+		data = markAs(data, streamType)
+		s.sendDataToObservers(data, destinationObservers, errors)
+	}
+
 	// todo: add positional number to the data
 
 	switch request.(type) {
-	case *requests.RequestSynchronisationTimeFrames:
-		{
-			data = markAs(data, StreamTypeRequestTimeFrames)
-			s.sendDataToObservers(data, allObservers(), errors)
+	case *requests.SynchronisationTimeFrames:
+		send(constants.StreamTypeRequestTimeFrames, nil)
+
+	case *requests.PoolInstanceBroadcast:
+		switch request.(*requests.PoolInstanceBroadcast).Instance.(type) {
+		case *geo.TransactionSignaturesList:
+			send(
+				constants.StreamTypeRequestTSLBroadcast,
+				request.(*requests.PoolInstanceBroadcast).DestinationObservers())
+
+		case *geo.Claim:
+			send(
+				constants.StreamTypeRequestClaimBroadcast,
+				request.(*requests.PoolInstanceBroadcast).DestinationObservers())
+
+		default:
+			// todo: report error here
+			s.log().Debug("unexpected broadcast request occurred")
 		}
 
+	case *requests.CandidateDigestBroadcast:
+		send(constants.StreamTypeRequestDigestBroadcast, nil)
+
+	case *requests.BlockSignaturesBroadcast:
+		send(constants.StreamTypeRequestBlockSignaturesBroadcast, nil)
+
 	default:
-		{
-			errors <- utils.Error(
-				"observers sender",
-				"unexpected request type occurred")
-		}
+		errors <- utils.Error(
+			"observers sender",
+			"unexpected request type occurred")
+		s.log().Debug("Unexpected request type occurred")
 	}
 }
 
 func (s *Sender) processResponseSending(response responses.Response, errors chan<- error) {
 	if response == nil {
-		errors <- common.ErrNilParameter
+		errors <- errors2.NilParameter
 		return
 	}
 
@@ -174,61 +159,42 @@ func (s *Sender) processResponseSending(response responses.Response, errors chan
 		return
 	}
 
+	send := func(streamType []byte, destinationObservers []uint16) {
+		s.log().WithFields(log.Fields{
+			"Type": reflect.TypeOf(response).String(),
+		}).Debug("Enqueued")
+
+		data = markAs(data, streamType)
+		s.sendDataToObservers(data, destinationObservers, errors)
+	}
+
 	switch response.(type) {
-	case *responses.ResponseTimeFrame:
-		{
-			data = markAs(data, StreamTypeResponseTimeFrame)
-			s.sendDataToObservers(data, []uint16{response.Request().ObserverNumber()}, errors)
-		}
+	case *responses.TimeFrame:
+		send(
+			constants.StreamTypeResponseTimeFrame,
+			[]uint16{response.Request().ObserverIndex()})
+
+	case *responses.ClaimApprove:
+		send(
+			constants.StreamTypeResponseClaimApprove,
+			[]uint16{response.Request().ObserverIndex()})
+
+	case *responses.TSLApprove:
+		send(
+			constants.StreamTypeResponseTSLApprove,
+			[]uint16{response.Request().ObserverIndex()})
+
+	case *responses.CandidateDigestApprove:
+		send(
+			constants.StreamTypeResponseDigestApprove,
+			[]uint16{response.Request().ObserverIndex()})
 
 	default:
-		{
-			errors <- utils.Error(
-				"observers sender",
-				"unexpected response type occurred")
-		}
+		errors <- utils.Error(
+			"observers sender",
+			"unexpected response type occurred")
+		s.log().Debug("Unexpected response type occurred")
 	}
-}
-
-// todo: consider sending blocks as a stream: claim after claim with on the fly validation on the receivers part
-// (defence from the invalid data sending )
-func (s *Sender) processBlockProposalSending(block *chain.ProposedBlock, errors chan<- error) {
-	if block == nil {
-		errors <- common.ErrNilParameter
-		return
-	}
-
-	data, err := block.MarshalBinary()
-	if err != nil {
-		errors <- utils.Wrap(ErrInvalidSendingAttempt, err.Error())
-		return
-	}
-
-	// Mark data as block proposal and send it.
-	data = append(StreamTypeBlockProposal, data...)
-
-	// todo: crate function for observers selection
-	s.sendDataToObservers(data, nil, errors)
-}
-
-func (s *Sender) processBlockSignatureSending(message *messages.SignatureMessage, errors chan<- error) {
-	if message == nil {
-		errors <- common.ErrNilParameter
-		return
-	}
-
-	data, err := message.MarshalBinary()
-	if err != nil {
-		errors <- utils.Wrap(ErrInvalidSendingAttempt, err.Error())
-		return
-	}
-
-	// todo: append block hash to have possibility to collect signatures
-	//  for various proposed blocks on the receiver's side.
-
-	// Mark data as block proposal and send it.
-	data = append(StreamTypeBlockSignature, data...)
-	s.sendDataToObservers(data, []uint16{message.AddresseeObserverIndex}, errors)
 }
 
 func (s *Sender) processIncomingEvent(event interface{}, errors chan<- error) {
@@ -250,7 +216,7 @@ func (s *Sender) sendDataToObservers(data []byte, observersIndexes []uint16, err
 		return
 	}
 
-	observersConf, err := s.ObserversConfRep.GetCurrentConfiguration()
+	observersConf, err := s.reporter.GetCurrentConfiguration()
 	if err != nil {
 		errors <- ErrInvalidObserversConfiguration
 		return
@@ -260,16 +226,14 @@ func (s *Sender) sendDataToObservers(data []byte, observersIndexes []uint16, err
 		// Bytes must be sent to all observers.
 		for _, observer := range observersConf.Observers {
 
-			//if !s.Settings.Debug {
 			// If not debug - prevent sending the data to itself.
 			// In debug mode it might be useful to send blocks to itself,
 			// to test whole network cycle in one executable process.
-			if observer.Host == s.Settings.Observers.Network.Host {
-				if observer.Port == s.Settings.Observers.Network.Port {
+			if observer.Host == s.settings.Observers.Network.Host {
+				if observer.Port == s.settings.Observers.Network.Port {
 					continue
 				}
 			}
-			//}
 
 			err := s.sendDataToObserver(observer, data)
 			if err != nil {
@@ -330,9 +294,7 @@ func (s *Sender) sendDataToObserver(observer *external.Observer, data []byte) (e
 			return
 		}
 
-		//conn.Connection
-
-		s.log().Debug("[TX=>] ", len(data), "B sent, ", conn.Connection.RemoteAddr())
+		s.logEgress(len(data), conn.Connection)
 		return nil
 	}
 
@@ -340,16 +302,15 @@ func (s *Sender) sendDataToObserver(observer *external.Observer, data []byte) (e
 		return ErrEmptyData
 	}
 
-	//if !s.Settings.Debug {
+	//if !s.settings.Debug {
 	// If not debug - prevent sending the data to itself.
 	// In debug mode it might be useful to send blocks to itself,
 	// to test whole network cycle in one executable process.
-	if observer.Host == s.Settings.Observers.Network.Host {
-		if observer.Port == s.Settings.Observers.Network.Port {
+	if observer.Host == s.settings.Observers.Network.Host {
+		if observer.Port == s.settings.Observers.Network.Port {
 			return ErrCycleDataSending
 		}
 	}
-	//}
 
 	conn, err := s.connections.Get(observer)
 	if err != nil {
@@ -390,23 +351,35 @@ func (s *Sender) connectToObserver(o *external.Observer) (connection *Connection
 		// so it would be very difficult to know which o can't be reached.
 		//
 		// To make it possible - some additional log information is printed here.
-		additionalInfo := log.Fields{"host": o.Host, "port": o.Port}
-		s.log().WithFields(additionalInfo).Errorln("Can't connect to remote observer.")
+
+		s.log().WithFields(log.Fields{
+			"Host": o.Host,
+			"Port": o.Port,
+		}).Warn("Remote obs. connection refused")
 
 		return nil, ErrObserverConnectionRefused
 	}
 
-	if s.Settings.Debug {
-		additionalInfo := log.Fields{"host": o.Host, "port": o.Port}
-		s.log().WithFields(additionalInfo).Info("Connected to remote observer.")
+	if s.settings.Debug {
+		s.log().WithFields(log.Fields{
+			"Host": o.Host,
+			"Port": o.Port,
+		}).Info("Connected to remote observer.")
 	}
 
 	s.connections.Set(o, conn)
 	return s.connections.Get(o)
 }
 
+func (s *Sender) logEgress(bytesSent int, conn net.Conn) {
+	s.log().WithFields(log.Fields{
+		"Bytes":     bytesSent,
+		"Addressee": conn.RemoteAddr(),
+	}).Debug("[TX =>]")
+}
+
 func (s *Sender) log() *log.Entry {
-	return log.WithFields(log.Fields{"subsystem": "ObserversSender"})
+	return log.WithFields(log.Fields{"prefix": "Network/Observers/Sender"})
 }
 
 // markAs prefixes "data" with "prefix" that specifies type of data,

@@ -1,22 +1,21 @@
 package chain
 
 import (
+	"geo-observers-blockchain/core/chain/block"
+	"geo-observers-blockchain/core/chain/signatures"
+	"geo-observers-blockchain/core/common"
+	"geo-observers-blockchain/core/geo"
 	"geo-observers-blockchain/core/storage"
 	"geo-observers-blockchain/core/utils"
-	"time"
 )
 
 var (
 	ErrBlocksCollision = utils.Error("chain", "blocks collision")
 )
 
-// todo: consider dropping claims and TSLs that are not needed any more.
+// todo: consider dropping claims and TSLsHashes that are not needed any more.
+// improve: write 1-2 bytes for empty block, now empty block contains 68B.
 type Chain struct {
-	// Time when last block was generated/inserted.
-	// todo: move this into block info
-	//  each one block must contains date time of it creation
-	LastBlockTimestamp time.Time
-
 	storage *storage.AppendOnlyStorage
 }
 
@@ -27,7 +26,7 @@ func NewChain() (chain *Chain, err error) {
 	}
 
 	chain = &Chain{storage: storageHandler}
-	chain.resetLastBlockTimestamp()
+	err = chain.ensureGenesisBlockPresence()
 	return
 }
 
@@ -41,8 +40,10 @@ func (chain *Chain) Height() uint64 {
 	return recordsCount
 }
 
-func (chain *Chain) Append(bs *BlockSigned) (err error) {
-	if chain.storage.HasIndex(bs.Data.Height) {
+func (chain *Chain) Append(bs *block.Signed) (err error) {
+	// todo: add hashes check for collision detection
+
+	if chain.storage.HasIndex(bs.Body.Index) {
 		return ErrBlocksCollision
 	}
 
@@ -54,16 +55,46 @@ func (chain *Chain) Append(bs *BlockSigned) (err error) {
 	return chain.storage.Append(data[:])
 }
 
-// todo: use this method instead of method in block producer
-func (chain *Chain) Validate(block *ProposedBlock) error {
-	return nil
-}
-
-func (chain *Chain) resetLastBlockTimestamp() {
-	if chain.Height() == 0 {
-		chain.LastBlockTimestamp = time.Now()
-
-	} else {
-		// todo: read from last block
+func (chain *Chain) At(index uint64) (b *block.Signed, err error) {
+	data, err := chain.storage.Get(index)
+	if err != nil {
+		return
 	}
+
+	b = &block.Signed{}
+	err = b.UnmarshalBinary(data)
+	if err != nil {
+		return
+	}
+
+	return
 }
+
+func (chain *Chain) ensureGenesisBlockPresence() (err error) {
+	if chain.Height() == 0 {
+		b := &block.Signed{
+			Body: &block.Body{
+				Index:               0,
+				ExternalChainHeight: 0,
+				AuthorObserverIndex: 0,
+				Claims:              &geo.Claims{},
+				TSLs:                &geo.TransactionSignaturesLists{},
+			},
+			Signatures: signatures.NewIndexedObserversSignatures(common.ObserversMaxCount),
+		}
+
+		err = chain.Append(b)
+	}
+
+	return
+}
+
+//
+//func (chain *Chain) resetLastBlockTimestamp() {
+//	if chain.Index() == 0 {
+//		chain.LastBlockTimestamp = time.Now()
+//
+//	} else {
+//		// todo: read from last block
+//	}
+//}

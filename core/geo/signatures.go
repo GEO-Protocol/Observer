@@ -1,27 +1,30 @@
 package geo
 
 import (
+	"bytes"
 	"geo-observers-blockchain/core/common"
-	"geo-observers-blockchain/core/common/types"
+	"geo-observers-blockchain/core/common/errors"
+	"geo-observers-blockchain/core/common/types/transactions"
 	"geo-observers-blockchain/core/crypto/lamport"
 	"geo-observers-blockchain/core/utils"
+	"sort"
 )
 
 type TransactionSignaturesList struct {
-	TxUUID     *types.TransactionUUID
+	TxUUID     *transactions.TransactionUUID
 	Signatures *lamport.Signatures
 }
 
 func NewTransactionSignaturesList() *TransactionSignaturesList {
 	return &TransactionSignaturesList{
-		TxUUID:     types.NewTransactionUUID(),
+		TxUUID:     transactions.NewTransactionUUID(),
 		Signatures: &lamport.Signatures{},
 	}
 }
 
 func (t *TransactionSignaturesList) MarshalBinary() (data []byte, err error) {
 	if t.TxUUID == nil || t.Signatures == nil {
-		return nil, common.ErrNilInternalDataStructure
+		return nil, errors.NilInternalDataStructure
 	}
 
 	uuidData, err := t.TxUUID.MarshalBinary()
@@ -40,19 +43,21 @@ func (t *TransactionSignaturesList) MarshalBinary() (data []byte, err error) {
 
 func (t *TransactionSignaturesList) UnmarshalBinary(data []byte) (err error) {
 	const (
-		minDataLength = types.TransactionUUIDSize + types.Uint16ByteSize
+		minDataLength = common.TransactionUUIDSize + common.Uint16ByteSize
 	)
 
 	if len(data) < minDataLength {
-		return common.ErrInvalidDataFormat
+		return errors.InvalidDataFormat
 	}
 
-	err = t.TxUUID.UnmarshalBinary(data[:types.TransactionUUIDSize])
+	t.TxUUID = &transactions.TransactionUUID{}
+	err = t.TxUUID.UnmarshalBinary(data[:common.TransactionUUIDSize])
 	if err != nil {
 		return
 	}
 
-	err = t.Signatures.UnmarshalBinary(data[types.TransactionUUIDSize:])
+	t.Signatures = &lamport.Signatures{}
+	err = t.Signatures.UnmarshalBinary(data[common.TransactionUUIDSize:])
 	if err != nil {
 		return
 	}
@@ -62,7 +67,7 @@ func (t *TransactionSignaturesList) UnmarshalBinary(data []byte) (err error) {
 
 //---------------------------------------------------------------------------------------------------------------------
 
-const TransactionSignaturesListsMaxCount = common.GeoTransactionMaxParticipantsCount
+const TransactionSignaturesListsMaxCount = common.GEOTransactionMaxParticipantsCount
 
 type TransactionSignaturesLists struct {
 	At []*TransactionSignaturesList
@@ -70,7 +75,7 @@ type TransactionSignaturesLists struct {
 
 func (t *TransactionSignaturesLists) Add(tsl *TransactionSignaturesList) error {
 	if tsl == nil {
-		return common.ErrNilParameter
+		return errors.NilParameter
 	}
 
 	if t.Count() < TransactionSignaturesListsMaxCount {
@@ -78,23 +83,49 @@ func (t *TransactionSignaturesLists) Add(tsl *TransactionSignaturesList) error {
 		return nil
 	}
 
-	return common.ErrMaxCountReached
+	return errors.MaxCountReached
 }
 
 func (t *TransactionSignaturesLists) Count() uint16 {
 	return uint16(len(t.At))
 }
 
+// todo: tests needed
+func (t *TransactionSignaturesLists) Sort() (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = r.(error)
+			return
+		}
+	}()
+
+	sort.Slice(t.At, func(i, j int) bool {
+		aBinaryData, err := t.At[i].MarshalBinary()
+		if err != nil {
+			panic(err)
+		}
+
+		bBinaryData, err := t.At[j].MarshalBinary()
+		if err != nil {
+			panic(err)
+		}
+
+		return bytes.Compare(aBinaryData, bBinaryData) == -1
+	})
+
+	return
+}
+
 // Format:
-// 2B - Total TSLs count.
-// [2B, 2B, ... 2B] - TSLs sizes.
-// [NB, NB, ... NB] - TSLs bodies.
+// 2B - Total TSLsHashes count.
+// [2B, 2B, ... 2B] - TSLsHashes sizes.
+// [NB, NB, ... NB] - TSLsHashes bodies.
 func (t *TransactionSignaturesLists) MarshalBinary() (data []byte, err error) {
 
 	// todo: add internal data size prediction and allocate memory at once.
 	var (
-		initialDataSize = types.Uint16ByteSize + // Total TSLs count.
-			types.Uint32ByteSize*t.Count() // TSLs sizes fields.
+		initialDataSize = common.Uint16ByteSize + // Total TSLsHashes count.
+			common.Uint32ByteSize*t.Count() // TSLsHashes sizes fields.
 	)
 
 	data = make([]byte, 0, initialDataSize)
@@ -115,7 +146,7 @@ func (t *TransactionSignaturesLists) MarshalBinary() (data []byte, err error) {
 		// Append TSL size directly to the data stream.
 		data = append(data, utils.MarshalUint32(uint32(len(TSLBinary)))...)
 
-		// Claims would be attached to the data after all TSLs size fields would be written.
+		// ClaimsHashes would be attached to the data after all TSLsHashes size fields would be written.
 		TSLs = append(TSLs, TSLBinary)
 	}
 
@@ -124,7 +155,7 @@ func (t *TransactionSignaturesLists) MarshalBinary() (data []byte, err error) {
 }
 
 func (t *TransactionSignaturesLists) UnmarshalBinary(data []byte) (err error) {
-	count, err := utils.UnmarshalUint16(data[:types.Uint16ByteSize])
+	count, err := utils.UnmarshalUint16(data[:common.Uint16ByteSize])
 	if err != nil {
 		return
 	}
@@ -137,18 +168,18 @@ func (t *TransactionSignaturesLists) UnmarshalBinary(data []byte) (err error) {
 	TSLsSizes := make([]uint32, 0, t.Count())
 
 	var i uint16
-	var offset uint32 = types.Uint16ByteSize
+	var offset uint32 = common.Uint16ByteSize
 	for i = 0; i < count; i++ {
-		TSLSize, err := utils.UnmarshalUint32(data[offset : offset+types.Uint32ByteSize])
+		TSLSize, err := utils.UnmarshalUint32(data[offset : offset+common.Uint32ByteSize])
 		if err != nil {
 			return err
 		}
 		if TSLSize == 0 {
-			err = common.ErrInvalidDataFormat
+			err = errors.InvalidDataFormat
 		}
 
 		TSLsSizes = append(TSLsSizes, TSLSize)
-		offset += types.Uint32ByteSize
+		offset += common.Uint32ByteSize
 	}
 
 	for i = 0; i < count; i++ {

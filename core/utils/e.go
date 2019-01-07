@@ -9,6 +9,6 @@ func Wrap(err error, message string) error {
 	return errors.New(message + " > " + err.Error())
 }
 
-func Error(subsystem, message string) error {
-	return errors.New(fmt.Sprint("[", subsystem, "] ", message))
+func Error(prefix, message string) error {
+	return errors.New(fmt.Sprint("[", prefix, "] ", message))
 }

@@ -5,8 +5,9 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
-	"geo-observers-blockchain/core/common/types"
+	"geo-observers-blockchain/core/common/types/hash"
 	"geo-observers-blockchain/core/crypto/ecdsa"
+	log "github.com/sirupsen/logrus"
 	"io/ioutil"
 	"os"
 )
@@ -35,17 +36,22 @@ func New() (keystore *KeyStore, err error) {
 	return
 }
 
-func (k *KeyStore) SignHash(h types.SHA256Container) (signature *ecdsa.Signature, err error) {
+func (k *KeyStore) IsEqualPubKey(key *e.PublicKey) bool {
+	return k.pkey.PublicKey.X.Cmp(key.X) == 0 &&
+		k.pkey.PublicKey.Y.Cmp(key.Y) == 0
+}
+
+func (k *KeyStore) SignHash(h hash.SHA256Container) (signature *ecdsa.Signature, err error) {
 	signature = &ecdsa.Signature{}
 	signature.R, signature.S, err = e.Sign(rand.Reader, k.pkey, h.Bytes[:])
 	return
 }
 
-func (k *KeyStore) CheckOwnSignature(h types.SHA256Container, sig ecdsa.Signature) bool {
+func (k *KeyStore) CheckOwnSignature(h hash.SHA256Container, sig ecdsa.Signature) bool {
 	return e.Verify(&k.pkey.PublicKey, h.Bytes[:], sig.R, sig.S)
 }
 
-func (k *KeyStore) CheckExternalSignature(h types.SHA256Container, sig ecdsa.Signature, pubKey *e.PublicKey) bool {
+func (k *KeyStore) CheckExternalSignature(h hash.SHA256Container, sig ecdsa.Signature, pubKey *e.PublicKey) bool {
 	return e.Verify(pubKey, h.Bytes[:], sig.R, sig.S)
 }
 
@@ -75,4 +81,8 @@ func (k *KeyStore) decodePKeyFromPem(pemEncodedPKey string) (err error) {
 	block, _ := pem.Decode([]byte(pemEncodedPKey))
 	k.pkey, err = x509.ParseECPrivateKey(block.Bytes)
 	return
+}
+
+func (k *KeyStore) log() *log.Entry {
+	return log.WithFields(log.Fields{"prefix": "keystore"})
 }

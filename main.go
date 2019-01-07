@@ -8,6 +8,9 @@ import (
 )
 
 func main() {
+	PrintLogo()
+	PrintVersionDigest()
+
 	conf, err := settings.LoadSettings()
 	if err != nil {
 		log.Fatal(err)
@@ -21,6 +24,5 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Blocking call.
 	c.Run()
 }

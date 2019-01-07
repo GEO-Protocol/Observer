@@ -3,10 +3,43 @@ package common
 import "time"
 
 const (
-	ObserversMaxCount               = 4                // todo: fix me to 1024
-	ObserversConsensusCount         = 3                // todo: fix me to 768
-	AverageBlockGenerationTimeRange = time.Second * 45 // todo: fix me to time.Hour
+	ObserversMaxCount       = 4 // todo: fix me to 1024
+	ObserversConsensusCount = 2 // todo: fix me to 768
+
+	// This period of time is delegated to the observer for block generation and distribution.
+	// It is expected, that block generation would be almost timeless,
+	// and the rest of time would be spent for the block distribution.
+	//
+	// Recommended value for production usage: 10 minutes.
+	// Recommended value for development usage: 2 seconds.
+	AverageBlockGenerationTimeRange = time.Second * 5 // todo: fix me to time.Hour
+
+	// Time range during which remote observers might respond with their ticker states.
+	//
+	// WARN!
+	// This value must be at least 3 times less,
+	// than block generation time range.
+	SynchronisationTimeRange = time.Second // todo: set to 30 sec
+
+	// This period of time is used as a buffer time window:
+	// during this time window observer does not accepts any external events or messages,
+	// and prepares to process next ticker tick.
+	//
+	// This time window MUST be shorter than block generation time range,
+	// because it would be subtracted from the AverageBlockGenerationTimeRange.
+	//
+	// Recommended value for production usage: 20 seconds.
+	// Recommended value for development usage: 1 second.
+	BlockGenerationSilencePeriod = time.Second
 
 	// todo: sync with the GEO engine
-	GeoTransactionMaxParticipantsCount = 1024 * 32
+	GEOTransactionMaxParticipantsCount = 700
+)
+
+const (
+	TransactionUUIDSize = 16
+
+	Uint16ByteSize = 2
+	Uint32ByteSize = 4
+	Uint64ByteSize = 8
 )

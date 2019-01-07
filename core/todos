@@ -1,0 +1,19 @@
+1. Add parameters checking to each one method of each one component (contract development)
+2. В сендері до всіх повідомлень додавати підпис обзервера. Таким чином, кожне повідомлення буде заверіно,
+що воно належить саме тому обзерверу, якому слід, і це автоматична гарантія того,
+що хтось лівий не генерує дані в мережу. Також, це автоматична гарантія належності блоків до обзерверів, які їх генерують.
+3. Add copyright
+4. Add stack trace to each error generated
+5. cover codebase by the tests
+6. Provide efficient blocks digests distribution logic (grid).
+7. Add observer response with recommendation to exclude some claims or TSLs from the candidate block
+   (useful in case if some observer has lost it's pool and now block generation is impossible,
+   because of pools are not in sync)
+8. Begin automatic observer node synchronisation in case if there is signatures list occurred, that contains consensus.
+   (note: signature list must contains anchor to the votes epoch, to be able to check validity of the signatures list)
+9. Provide genesis block in chain
+10. encrypt traffic between observers
+11. Якщо той самий обзервер в межах свого часу на генерацію блоку перегенеровує блок, і при цьому в ньому менше даних,
+    ніж в попередньому пропонованому блоці, а також номер спроби збільшений - тоді інші обзервери повинні його підписати,
+    навіть, якщо вони вже підписували раніше інший блок-пропозицію цього ж обзервера.
+    Якщо час на генерацію блоку вичерпаний - і блок не потрапив в чейн - кандидат вважається застарілим.
