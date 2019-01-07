@@ -14,15 +14,15 @@ import (
 // each signature on serialization/deserialization.
 //
 // Note:
-// This structure differs from "Signatures".
-// "Signatures" does not serializes observers indexes.
+// This structure differs from "At".
+// "At" does not serializes observers indexes.
 type IndexedObserversSignatures struct {
-	Signatures []*ecdsa.Signature
+	At []*ecdsa.Signature
 }
 
 func NewIndexedObserversSignatures(count int) *IndexedObserversSignatures {
 	return &IndexedObserversSignatures{
-		Signatures: make([]*ecdsa.Signature, count, count),
+		At: make([]*ecdsa.Signature, count, count),
 	}
 }
 
@@ -32,7 +32,7 @@ func (s *IndexedObserversSignatures) IsMajorityApprovesCollected() bool {
 		negativeVotesPresent = 0
 	)
 
-	for _, sig := range s.Signatures {
+	for _, sig := range s.At {
 		if sig != nil {
 			positiveVotesPresent++
 			if positiveVotesPresent >= common.ObserversConsensusCount {
@@ -50,10 +50,32 @@ func (s *IndexedObserversSignatures) IsMajorityApprovesCollected() bool {
 	return false
 }
 
+func (s *IndexedObserversSignatures) VotesIndexes() (indexes []uint16) {
+	indexes = make([]uint16, 0, common.ObserversMaxCount)
+	for i, sig := range s.At {
+		if sig != nil {
+			indexes = append(indexes, uint16(i))
+		}
+	}
+
+	return
+}
+
+func (s *IndexedObserversSignatures) Count() uint16 {
+	return uint16(len(s.VotesIndexes()))
+}
+
 // todo: [enhance] think about little bit compact binary format.
 func (s *IndexedObserversSignatures) MarshalBinary() (data []byte, err error) {
-	data = utils.MarshalUint16(uint16(len(s.Signatures)))
-	for index, sig := range s.Signatures {
+	var totalNotNilSignaturesCount uint16 = 0
+	for _, sig := range s.At {
+		if sig != nil {
+			totalNotNilSignaturesCount++
+		}
+	}
+
+	data = utils.MarshalUint16(totalNotNilSignaturesCount)
+	for index, sig := range s.At {
 		if sig == nil {
 			continue
 		}
@@ -69,6 +91,7 @@ func (s *IndexedObserversSignatures) MarshalBinary() (data []byte, err error) {
 				utils.MarshalUint16(uint16(len(signatureBinary))),
 				signatureBinary)...)
 	}
+
 	return
 }
 
@@ -82,7 +105,7 @@ func (s *IndexedObserversSignatures) UnmarshalBinary(data []byte) (err error) {
 		return
 	}
 
-	s.Signatures = make([]*ecdsa.Signature, count, 0)
+	s.At = make([]*ecdsa.Signature, common.ObserversMaxCount, common.ObserversMaxCount)
 
 	var (
 		offset        = common.Uint16ByteSize
@@ -106,8 +129,9 @@ func (s *IndexedObserversSignatures) UnmarshalBinary(data []byte) (err error) {
 		if err != nil {
 			return err
 		}
+		offset += int(size)
 
-		s.Signatures[index] = sig
+		s.At[index] = sig
 	}
 	return
 }

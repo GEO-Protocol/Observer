@@ -1,16 +1,16 @@
 package requests
 
-// RequestSynchronisationTimeFrames is used for time frame synchronisation purposes.
+// SynchronisationTimeFrames is used for time frame synchronisation purposes.
 // It is emitted by the observer as a request for information about
 // current state of the ticker on other observers.
-type RequestSynchronisationTimeFrames struct {
+type SynchronisationTimeFrames struct {
 	request
 }
 
-func (r *RequestSynchronisationTimeFrames) MarshalBinary() ([]byte, error) {
+func (r *SynchronisationTimeFrames) MarshalBinary() ([]byte, error) {
 	return r.request.MarshalBinary()
 }
 
-func (r *RequestSynchronisationTimeFrames) UnmarshalBinary(data []byte) error {
+func (r *SynchronisationTimeFrames) UnmarshalBinary(data []byte) error {
 	return r.request.UnmarshalBinary(data)
 }

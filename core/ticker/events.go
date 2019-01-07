@@ -1,4 +1,4 @@
-package timer
+package ticker
 
 import (
 	"geo-observers-blockchain/core/network/external"
@@ -15,9 +15,9 @@ type EventTimeFrameEnd struct {
 	Conf *external.Configuration
 
 	// See documentation for constants.BlockGenerationSilencePeriod.
-	SilencePeriodTimestamp time.Time
+	FinalStageTimestamp time.Time
 }
 
-// EventTickerStarted is emitted each time when internal timer ticker is started,
+// EventTickerStarted is emitted each time when internal ticker ticker is started,
 // for example (when synchronisation is finished).
 type EventTickerStarted struct{}

@@ -7,21 +7,21 @@ import (
 	"geo-observers-blockchain/core/utils"
 )
 
-type RequestPoolInstanceBroadcast struct {
+type PoolInstanceBroadcast struct {
 	request
 
 	Instance interface{}
 }
 
-func NewRequestPoolInstanceBroadcast(
-	destinationObservers []uint16, instance interface{}) *RequestPoolInstanceBroadcast {
-	return &RequestPoolInstanceBroadcast{
+func NewPoolInstanceBroadcast(
+	destinationObservers []uint16, instance interface{}) *PoolInstanceBroadcast {
+	return &PoolInstanceBroadcast{
 		request:  newRequest(destinationObservers),
 		Instance: instance,
 	}
 }
 
-func (r *RequestPoolInstanceBroadcast) MarshalBinary() (data []byte, err error) {
+func (r *PoolInstanceBroadcast) MarshalBinary() (data []byte, err error) {
 	var (
 		streamType   []byte
 		instanceData []byte
@@ -57,7 +57,7 @@ func (r *RequestPoolInstanceBroadcast) MarshalBinary() (data []byte, err error) 
 	return
 }
 
-func (r *RequestPoolInstanceBroadcast) UnmarshalBinary(data []byte) (err error) {
+func (r *PoolInstanceBroadcast) UnmarshalBinary(data []byte) (err error) {
 	err = r.request.UnmarshalBinary(data[1:3])
 	if err != nil {
 		return

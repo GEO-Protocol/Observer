@@ -37,21 +37,23 @@ func Open(filename string) (*AppendOnlyStorage, error) {
 	storage := &AppendOnlyStorage{}
 
 	var err error
-	storage.file, err = os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
+	storage.file, err = os.OpenFile(filename, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		return nil, err
 	}
+
+	storage.index = make(map[uint64]int64)
 
 	err = storage.resetIndex()
 	if err != nil {
 		return nil, err
 	}
 
-	storage.index = make(map[uint64]int64)
 	storage.isActive = true
 	return storage, nil
 }
 
+// todo: add record version to make it possible to change format in the future
 func (c *AppendOnlyStorage) Append(data []byte) error {
 
 	if !c.isActive {
@@ -111,7 +113,7 @@ func (c *AppendOnlyStorage) Append(data []byte) error {
 	}
 
 	// Real header.
-	lastRecordOffset, err := c.file.Seek(int64(recordSize)*-1, 1)
+	lastRecordOffset, err := c.file.Seek(int64(recordSize+4)*-1, 1)
 	if err != nil {
 		return err
 	}
@@ -127,8 +129,8 @@ func (c *AppendOnlyStorage) Append(data []byte) error {
 		return err
 	}
 
-	c.recordsCount += 1
 	c.index[c.recordsCount] = lastRecordOffset
+	c.recordsCount += 1
 	return nil
 }
 
@@ -264,13 +266,9 @@ func (c *AppendOnlyStorage) resetIndex() error {
 			return nil
 		}
 
-		bytesSeek, err := c.file.Seek(int64(recordSize), 1)
+		_, err = c.file.Seek(int64(recordSize), 1)
 		if err != nil {
 			return err
-		}
-
-		if bytesSeek != int64(recordSize) {
-			return ErrorInvalidOffset
 		}
 
 		c.index[c.recordsCount] = currentSeek

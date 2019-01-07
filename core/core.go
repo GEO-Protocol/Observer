@@ -3,7 +3,6 @@ package core
 import (
 	"geo-observers-blockchain/core/chain"
 	"geo-observers-blockchain/core/chain/pool"
-	"geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/crypto/keystore"
 	"geo-observers-blockchain/core/geo"
 	geoNet "geo-observers-blockchain/core/network/communicator/geo"
@@ -12,22 +11,24 @@ import (
 	"geo-observers-blockchain/core/network/communicator/observers/responses"
 	"geo-observers-blockchain/core/network/external"
 	"geo-observers-blockchain/core/settings"
-	"geo-observers-blockchain/core/timer"
+	"geo-observers-blockchain/core/ticker"
 	"geo-observers-blockchain/core/utils"
 	log "github.com/sirupsen/logrus"
+	"reflect"
+	"time"
 )
 
 type Core struct {
 	settings              *settings.Settings
 	keystore              *keystore.KeyStore
-	timer                 *timer.Timer
+	timer                 *ticker.Ticker
 	observersConfReporter *external.Reporter
 	receiverGEONodes      *geoNet.Receiver
 	receiverObservers     *observersNet.Receiver
 	senderObservers       *observersNet.Sender
 	poolClaims            *pool.Handler
 	poolTSLs              *pool.Handler
-	blocksProducer        *chain.BlocksProducer
+	blocksProducer        *chain.Producer
 }
 
 func New(conf *settings.Settings) (core *Core, err error) {
@@ -36,13 +37,13 @@ func New(conf *settings.Settings) (core *Core, err error) {
 		return
 	}
 
-	reporter := external.NewReporter(conf)
-	producer, err := chain.NewBlocksProducer(conf, reporter, k)
+	reporter := external.NewReporter(conf, k)
+	producer, err := chain.NewProducer(conf, reporter, k)
 
 	core = &Core{
 		settings:              conf,
 		keystore:              k,
-		timer:                 timer.New(conf, reporter),
+		timer:                 ticker.New(conf, reporter),
 		observersConfReporter: reporter,
 		senderObservers:       observersNet.NewSender(conf, reporter),
 		receiverObservers:     observersNet.NewReceiver(),
@@ -51,6 +52,7 @@ func New(conf *settings.Settings) (core *Core, err error) {
 		poolTSLs:              pool.NewHandler(reporter),
 		blocksProducer:        producer,
 	}
+
 	return
 }
 
@@ -66,7 +68,7 @@ func (c *Core) Run() {
 			{
 				if err != nil {
 					// todo: enhance error processing
-					c.log().Error(err)
+					//c.log().Warn(err)
 				}
 			}
 		}
@@ -78,23 +80,13 @@ func (c *Core) initNetwork(errors chan error) {
 		c.settings.Nodes.Network.Host,
 		c.settings.Nodes.Network.Port,
 		errors)
-
 	c.exitIfError(errors)
-	c.log().Info(
-		"GEO Nodes communicator started"+
-			"Connections are accepted on: ",
-		c.settings.Nodes.Network.Host, ":", c.settings.Nodes.Network.Port)
 
 	go c.receiverObservers.Run(
 		c.settings.Observers.Network.Host,
 		c.settings.Observers.Network.Port,
 		errors)
-
 	c.exitIfError(errors)
-	c.log().Info(
-		"Observers incoming connections receiver started. "+
-			"Connections are accepted on: ",
-		c.settings.Observers.Network.Host, ":", c.settings.Observers.Network.Port)
 
 	go c.senderObservers.Run(
 		c.settings.Observers.Network.Host,
@@ -102,11 +94,13 @@ func (c *Core) initNetwork(errors chan error) {
 		errors)
 
 	c.exitIfError(errors)
-	log.Println("Observers outgoing info sender started")
 
 	// ...
 	// Other initialisation goes here
 	// ...
+
+	// Provide enough time for the network handler for bootstrap.
+	time.Sleep(time.Millisecond * 100)
 }
 
 func (c *Core) initProcessing(globalErrorsFlow chan error) {
@@ -114,22 +108,21 @@ func (c *Core) initProcessing(globalErrorsFlow chan error) {
 	go c.poolTSLs.Run(globalErrorsFlow)
 
 	go c.dispatchDataFlows(globalErrorsFlow)
-	//go c.timer.Run(globalErrorsFlow)
-	//
-	//go c.blocksProducer.Run(globalErrorsFlow)
-	//c.exitIfError(globalErrorsFlow)
+	go c.timer.Run(globalErrorsFlow)
 
+	// todo: ensure chain is in sync with the majority of the observers.
+	go c.blocksProducer.Run(globalErrorsFlow)
 }
 
 func (c *Core) dispatchDataFlows(globalErrorsFlow chan error) {
 
-	processFail := func(message string) {
-		err := errors.ExpandWithStackTrace(utils.Error("core", message))
+	processTransferringFail := func(instance, processor interface{}) {
+		err := utils.Error("core",
+			reflect.TypeOf(instance).String()+" failed to process by "+reflect.TypeOf(processor).String())
 		globalErrorsFlow <- err
 	}
 
 	processError := func(err error) {
-		err = errors.ExpandWithStackTrace(err)
 		globalErrorsFlow <- err
 	}
 
@@ -140,120 +133,98 @@ func (c *Core) dispatchDataFlows(globalErrorsFlow chan error) {
 		case eventConnectionClosed := <-c.receiverObservers.OutgoingEventsConnectionClosed:
 			select {
 			case c.senderObservers.IncomingEvents <- eventConnectionClosed:
-
 			default:
-				processFail("can't send event `connection closed` to the observers sender")
+				processTransferringFail(eventConnectionClosed, c.senderObservers)
 			}
 
 		case tick := <-c.timer.OutgoingEventsTimeFrameEnd:
 			select {
 			case c.blocksProducer.IncomingEventTimeFrameEnded <- tick:
-
 			default:
-				processFail("can't send event `time frame ended` to the blocks producer")
+				processTransferringFail(tick, c.blocksProducer)
 			}
 
 		// Block producer
-		case outgoingBlockProposed := <-c.blocksProducer.OutgoingBlocksProposals:
+		case outgoingRequestCandidateDigestBroadcast := <-c.blocksProducer.OutgoingRequestsCandidateDigestBroadcast:
 			select {
-			case c.senderObservers.OutgoingProposedBlocks <- outgoingBlockProposed:
-
+			case c.senderObservers.OutgoingRequests <- outgoingRequestCandidateDigestBroadcast:
 			default:
-				processFail("can't send proposed block to the observers sender")
+				processTransferringFail(outgoingRequestCandidateDigestBroadcast, c.senderObservers)
 			}
 
-		case outgoingBlockSignature := <-c.blocksProducer.OutgoingBlocksSignatures:
+		case outgoingResponseCandidateDigestApprove := <-c.blocksProducer.OutgoingResponsesCandidateDigestApprove:
 			select {
-			case c.senderObservers.OutgoingBlocksSignatures <- outgoingBlockSignature:
-
+			case c.senderObservers.OutgoingResponses <- outgoingResponseCandidateDigestApprove:
 			default:
-				processFail("can't send block signature to the observers sender")
+				processTransferringFail(outgoingResponseCandidateDigestApprove, c.senderObservers)
 			}
 
-		// Observers receiver
-		case incomingProposedBlock := <-c.receiverObservers.BlocksProposed:
+		case outgoingRequestBlockSignaturesBroadcast := <-c.blocksProducer.OutgoingRequestsBlockSignaturesBroadcast:
 			select {
-			case c.blocksProducer.IncomingBlocksProposals <- incomingProposedBlock:
-
+			case c.senderObservers.OutgoingRequests <- outgoingRequestBlockSignaturesBroadcast:
 			default:
-				processFail("can't send proposed block to the blocks producer")
-			}
-
-		case incomingBlockSignature := <-c.receiverObservers.BlockSignatures:
-			select {
-			case c.blocksProducer.IncomingBlocksSignatures <- incomingBlockSignature:
-
-			default:
-				processFail("can't send proposed block signature to the blocks producer")
+				processTransferringFail(outgoingRequestBlockSignaturesBroadcast, c.senderObservers)
 			}
 
 		// GEO Nodes Receiver
 		case incomingTSL := <-c.receiverGEONodes.IncomingTSLs:
 			select {
 			case c.poolTSLs.IncomingInstances <- incomingTSL:
-
 			default:
-				processFail("can't send received tsl to the tsls pool")
+				processTransferringFail(incomingTSL, c.poolTSLs)
 			}
 
 		case incomingClaim := <-c.receiverGEONodes.IncomingClaims:
 			select {
 			case c.poolClaims.IncomingInstances <- incomingClaim:
-
 			default:
-				processFail("can't send received claim to the claims pool")
+				processTransferringFail(incomingClaim, c.poolClaims)
 			}
 
-		// Timer
+		// Ticker
 		case outgoingRequestTimeFrames := <-c.timer.OutgoingRequestsTimeFrames:
 			select {
 			case c.senderObservers.OutgoingRequests <- outgoingRequestTimeFrames:
-
 			default:
-				processFail("can't send request `time frames` to the observers sender")
+				processTransferringFail(outgoingRequestTimeFrames, c.senderObservers)
 			}
 
 		case outgoingResponseTimeFrame := <-c.timer.OutgoingResponsesTimeFrame:
 			select {
 			case c.senderObservers.OutgoingResponses <- outgoingResponseTimeFrame:
-
 			default:
-				processFail("can't send response `time frames` to the observers sender")
+				processTransferringFail(outgoingResponseTimeFrame, c.senderObservers)
 			}
 
 		// Claims pool
 		case outgoingRequestClaimBroadcast := <-c.poolClaims.OutgoingRequestsInstanceBroadcast:
 			select {
 			case c.senderObservers.OutgoingRequests <- outgoingRequestClaimBroadcast:
-
 			default:
-				processFail("can't send request `claim broadcast` to the observers sender")
+				processTransferringFail(outgoingRequestClaimBroadcast, c.senderObservers)
 			}
 
 		case outgoingResponseClaimApprove := <-c.poolClaims.OutgoingResponsesInstanceBroadcast:
 			select {
-			case c.senderObservers.OutgoingResponses <- &responses.ResponseClaimApprove{
-				ResponsePoolInstanceBroadcastApprove: outgoingResponseClaimApprove}:
-
+			case c.senderObservers.OutgoingResponses <- &responses.ClaimApprove{
+				PoolInstanceBroadcastApprove: outgoingResponseClaimApprove}:
 			default:
-				processFail("can't send response `claim broadcast` to the observers sender")
+				processTransferringFail(outgoingResponseClaimApprove, c.senderObservers)
 			}
 
 		case outgoingRequestTSLBroadcast := <-c.poolTSLs.OutgoingRequestsInstanceBroadcast:
 			select {
 			case c.senderObservers.OutgoingRequests <- outgoingRequestTSLBroadcast:
-
 			default:
-				processFail("can't send request `TSL broadcast` to the observers sender")
+				processTransferringFail(outgoingRequestTSLBroadcast, c.senderObservers)
 			}
 
 		case outgoingResponseTSLApprove := <-c.poolTSLs.OutgoingResponsesInstanceBroadcast:
 			select {
-			case c.senderObservers.OutgoingResponses <- &responses.ResponseTSLApprove{
-				ResponsePoolInstanceBroadcastApprove: outgoingResponseTSLApprove}:
-
+			case c.senderObservers.OutgoingResponses <- &responses.TSLApprove{
+				PoolInstanceBroadcastApprove: outgoingResponseTSLApprove}:
 			default:
-				processFail("can't send response `TSL broadcast` to the observers sender")
+				processTransferringFail(outgoingResponseTSLApprove, c.senderObservers)
 			}
 
 		// Incoming requests and responses processing
@@ -273,35 +244,54 @@ func (c *Core) dispatchDataFlows(globalErrorsFlow chan error) {
 }
 
 func (c *Core) processIncomingRequest(r requests.Request) (err error) {
-	switch r.(type) {
-	case *requests.RequestSynchronisationTimeFrames:
-		select {
-		case c.timer.IncomingRequestsTimeFrames <- r.(*requests.RequestSynchronisationTimeFrames):
+	processTransferringFail := func(instance, processor interface{}) {
+		err = utils.Error("core",
+			reflect.TypeOf(instance).String()+
+				" wasn't sent to "+
+				reflect.TypeOf(processor).String()+
+				" due to channel transferring delay/error")
+	}
 
+	switch r.(type) {
+	case *requests.SynchronisationTimeFrames:
+		select {
+		case c.timer.IncomingRequestsTimeFrames <- r.(*requests.SynchronisationTimeFrames):
 		default:
-			err = utils.Error("core", "can't send request `time frames` to the timer")
+			processTransferringFail(r, c.timer)
 		}
 
-	case *requests.RequestPoolInstanceBroadcast:
-		switch r.(*requests.RequestPoolInstanceBroadcast).Instance.(type) {
+	case *requests.PoolInstanceBroadcast:
+		switch r.(*requests.PoolInstanceBroadcast).Instance.(type) {
 		case *geo.TransactionSignaturesList:
 			select {
-			case c.poolTSLs.IncomingRequestsInstanceBroadcast <- r.(*requests.RequestPoolInstanceBroadcast):
-
+			case c.poolTSLs.IncomingRequestsInstanceBroadcast <- r.(*requests.PoolInstanceBroadcast):
 			default:
-				err = utils.Error("core", "can't send request `tsl broadcast` to the tsl pool")
+				processTransferringFail(r, c.poolTSLs)
 			}
 
 		case *geo.Claim:
 			select {
-			case c.poolClaims.IncomingRequestsInstanceBroadcast <- r.(*requests.RequestPoolInstanceBroadcast):
-
+			case c.poolClaims.IncomingRequestsInstanceBroadcast <- r.(*requests.PoolInstanceBroadcast):
 			default:
-				err = utils.Error("core", "can't send request `claim broadcast` to the claims pool")
+				processTransferringFail(r, c.poolClaims)
 			}
 
 		default:
 			err = utils.Error("core", "unexpected pool instance type occurred")
+		}
+
+	case *requests.CandidateDigestBroadcast:
+		select {
+		case c.blocksProducer.IncomingRequestsCandidateDigest <- r.(*requests.CandidateDigestBroadcast):
+		default:
+			processTransferringFail(r, c.blocksProducer)
+		}
+
+	case *requests.BlockSignaturesBroadcast:
+		select {
+		case c.blocksProducer.IncomingRequestsBlockSignatures <- r.(*requests.BlockSignaturesBroadcast):
+		default:
+			processTransferringFail(r, c.blocksProducer)
 		}
 
 	default:
@@ -312,31 +302,46 @@ func (c *Core) processIncomingRequest(r requests.Request) (err error) {
 }
 
 func (c *Core) processIncomingResponse(r responses.Response) (err error) {
+	processTransferringFail := func(instance, processor interface{}) {
+		err = utils.Error("core",
+			reflect.TypeOf(instance).String()+
+				" wasn't sent to "+
+				reflect.TypeOf(processor).String()+
+				" due to channel transferring delay/error")
+	}
+
 	switch r.(type) {
-	case *responses.ResponseTimeFrame:
+	case *responses.TimeFrame:
 		select {
-		case c.timer.IncomingResponsesTimeFrame <- r.(*responses.ResponseTimeFrame):
+		case c.timer.IncomingResponsesTimeFrame <- r.(*responses.TimeFrame):
 
 		default:
-			err = utils.Error("core", "can't send response `time frames` to the timer")
+			processTransferringFail(r, c.timer)
 		}
 
-	case *responses.ResponseClaimApprove:
+	case *responses.ClaimApprove:
 		select {
-		case c.poolClaims.IncomingResponsesInstanceBroadcast <- responses.NewResponsePoolInstanceBroadcastApprove(
-			r.Request(), r.ObserverNumber(), r.(*responses.ResponseClaimApprove).Hash):
+		case c.poolClaims.IncomingResponsesInstanceBroadcast <- responses.NewPoolInstanceBroadcastApprove(
+			r.Request(), r.ObserverIndex(), r.(*responses.ClaimApprove).Hash):
 
 		default:
-			err = utils.Error("core", "can't send request `claim broadcast` to the claims pool")
+			processTransferringFail(r, c.poolClaims)
 		}
 
-	case *responses.ResponseTSLApprove:
+	case *responses.TSLApprove:
 		select {
-		case c.poolTSLs.IncomingResponsesInstanceBroadcast <- responses.NewResponsePoolInstanceBroadcastApprove(
-			r.Request(), r.ObserverNumber(), r.(*responses.ResponseTSLApprove).Hash):
+		case c.poolTSLs.IncomingResponsesInstanceBroadcast <- responses.NewPoolInstanceBroadcastApprove(
+			r.Request(), r.ObserverIndex(), r.(*responses.TSLApprove).Hash):
 
 		default:
-			err = utils.Error("core", "can't send response `tsl broadcast` to the tsl pool")
+			processTransferringFail(r, c.poolTSLs)
+		}
+
+	case *responses.CandidateDigestApprove:
+		select {
+		case c.blocksProducer.IncomingResponsesCandidateDigestApprove <- r.(*responses.CandidateDigestApprove):
+		default:
+			processTransferringFail(r, c.blocksProducer)
 		}
 
 	default:
@@ -356,5 +361,5 @@ func (c *Core) exitIfError(errors <-chan error) {
 }
 
 func (c *Core) log() *log.Entry {
-	return log.WithFields(log.Fields{"subsystem": "Core"})
+	return log.WithFields(log.Fields{"prefix": "Core"})
 }

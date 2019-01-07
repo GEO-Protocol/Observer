@@ -6,21 +6,21 @@ import (
 	"geo-observers-blockchain/core/utils"
 )
 
-type ResponsePoolInstanceBroadcastApprove struct {
+type PoolInstanceBroadcastApprove struct {
 	*response
 
 	Hash *hash.SHA256Container
 }
 
-func NewResponsePoolInstanceBroadcastApprove(
-	r requests.Request, observerNumber uint16, hash *hash.SHA256Container) *ResponsePoolInstanceBroadcastApprove {
-	return &ResponsePoolInstanceBroadcastApprove{
+func NewPoolInstanceBroadcastApprove(
+	r requests.Request, observerNumber uint16, hash *hash.SHA256Container) *PoolInstanceBroadcastApprove {
+	return &PoolInstanceBroadcastApprove{
 		response: newResponse(r, observerNumber),
 		Hash:     hash,
 	}
 }
 
-func (r *ResponsePoolInstanceBroadcastApprove) MarshalBinary() (data []byte, err error) {
+func (r *PoolInstanceBroadcastApprove) MarshalBinary() (data []byte, err error) {
 	responseData, err := r.response.MarshalBinary()
 	if err != nil {
 		return
@@ -34,7 +34,7 @@ func (r *ResponsePoolInstanceBroadcastApprove) MarshalBinary() (data []byte, err
 	return utils.ChainByteSlices(responseData, hashData), nil
 }
 
-func (r *ResponsePoolInstanceBroadcastApprove) UnmarshalBinary(data []byte) (err error) {
+func (r *PoolInstanceBroadcastApprove) UnmarshalBinary(data []byte) (err error) {
 	r.response = &response{}
 	err = r.response.UnmarshalBinary(data[:2])
 	if err != nil {
@@ -47,30 +47,30 @@ func (r *ResponsePoolInstanceBroadcastApprove) UnmarshalBinary(data []byte) (err
 
 // --------------------------------------------------------------------------------------------------------------------
 
-type ResponseClaimApprove struct {
-	*ResponsePoolInstanceBroadcastApprove
+type ClaimApprove struct {
+	*PoolInstanceBroadcastApprove
 }
 
-func (r *ResponseClaimApprove) MarshalBinary() (data []byte, err error) {
-	return r.ResponsePoolInstanceBroadcastApprove.MarshalBinary()
+func (r *ClaimApprove) MarshalBinary() (data []byte, err error) {
+	return r.PoolInstanceBroadcastApprove.MarshalBinary()
 }
 
-func (r *ResponseClaimApprove) UnmarshalBinary(data []byte) (err error) {
-	r.ResponsePoolInstanceBroadcastApprove = &ResponsePoolInstanceBroadcastApprove{}
-	return r.ResponsePoolInstanceBroadcastApprove.UnmarshalBinary(data)
+func (r *ClaimApprove) UnmarshalBinary(data []byte) (err error) {
+	r.PoolInstanceBroadcastApprove = &PoolInstanceBroadcastApprove{}
+	return r.PoolInstanceBroadcastApprove.UnmarshalBinary(data)
 }
 
 // --------------------------------------------------------------------------------------------------------------------
 
-type ResponseTSLApprove struct {
-	*ResponsePoolInstanceBroadcastApprove
+type TSLApprove struct {
+	*PoolInstanceBroadcastApprove
 }
 
-func (r *ResponseTSLApprove) MarshalBinary() (data []byte, err error) {
-	return r.ResponsePoolInstanceBroadcastApprove.MarshalBinary()
+func (r *TSLApprove) MarshalBinary() (data []byte, err error) {
+	return r.PoolInstanceBroadcastApprove.MarshalBinary()
 }
 
-func (r *ResponseTSLApprove) UnmarshalBinary(data []byte) (err error) {
-	r.ResponsePoolInstanceBroadcastApprove = &ResponsePoolInstanceBroadcastApprove{}
-	return r.ResponsePoolInstanceBroadcastApprove.UnmarshalBinary(data)
+func (r *TSLApprove) UnmarshalBinary(data []byte) (err error) {
+	r.PoolInstanceBroadcastApprove = &PoolInstanceBroadcastApprove{}
+	return r.PoolInstanceBroadcastApprove.UnmarshalBinary(data)
 }

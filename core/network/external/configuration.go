@@ -31,3 +31,12 @@ func (c *Configuration) Hash() hash.SHA256Container {
 
 	return hash.NewSHA256Container(data)
 }
+
+// CurrentExternalChainHeight returns current block number of the external blockchain.
+// It is implemented as a method of current configuration because this number would change relatively often,
+// but the observers configuration - only once a week, so there is no need to regenerate configuration each time
+// when external blockchain height has been increased.
+func (c *Configuration) CurrentExternalChainHeight() uint64 {
+	// todo: implement proxy method calling middleware
+	return 1
+}

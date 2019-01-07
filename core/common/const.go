@@ -14,9 +14,16 @@ const (
 	// Recommended value for development usage: 2 seconds.
 	AverageBlockGenerationTimeRange = time.Second * 5 // todo: fix me to time.Hour
 
+	// Time range during which remote observers might respond with their ticker states.
+	//
+	// WARN!
+	// This value must be at least 3 times less,
+	// than block generation time range.
+	SynchronisationTimeRange = time.Second // todo: set to 30 sec
+
 	// This period of time is used as a buffer time window:
 	// during this time window observer does not accepts any external events or messages,
-	// and prepares to process next timer tick.
+	// and prepares to process next ticker tick.
 	//
 	// This time window MUST be shorter than block generation time range,
 	// because it would be subtracted from the AverageBlockGenerationTimeRange.

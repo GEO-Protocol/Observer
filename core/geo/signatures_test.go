@@ -140,13 +140,13 @@ func TestTransactionSignaturesLists_MarshallBinary_OneTSL_1024Signatures(t *test
 		t.Fatal()
 	}
 
-	// Signatures count
+	// At count
 	pubKeysCountAreEqual := restoredTSLs.At[0].Signatures.Count() == restoredTSLs.At[0].Signatures.Count()
 	if !pubKeysCountAreEqual {
 		t.Fatal()
 	}
 
-	// Signatures data
+	// At data
 	for i, sig := range tsls.At[0].Signatures.At {
 		restoredSig := restoredTSLs.At[0].Signatures.At[i]
 		sigNIsEqual := bytes.Compare(sig.Bytes[:], restoredSig.Bytes[:]) == 0

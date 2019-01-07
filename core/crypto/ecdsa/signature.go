@@ -97,12 +97,12 @@ func (s *Signatures) Add(sig Signature) error {
 
 // Format:
 // 2B - Total signatures count.
-// [2B, 2B, ... 2B] - Signatures sizes.
-// [NB, NB, ... NB] - Signatures bodies.
+// [2B, 2B, ... 2B] - At sizes.
+// [NB, NB, ... NB] - At bodies.
 func (s *Signatures) MarshalBinary() (data []byte, err error) {
 	var (
 		initialDataSize = common.Uint16ByteSize + // Total signatures count.
-			common.Uint16ByteSize*s.Count() // Signatures sizes fields.
+			common.Uint16ByteSize*s.Count() // At sizes fields.
 	)
 
 	data = make([]byte, 0, initialDataSize)
@@ -147,15 +147,15 @@ func (s *Signatures) UnmarshalBinary(data []byte) (err error) {
 	var i uint16
 	var offset uint16 = common.Uint16ByteSize
 	for i = 0; i < count; i++ {
-		claimSize, err := utils.UnmarshalUint16(data[offset : offset+common.Uint16ByteSize])
+		signatureSize, err := utils.UnmarshalUint16(data[offset : offset+common.Uint16ByteSize])
 		if err != nil {
 			return err
 		}
-		if claimSize == 0 {
+		if signatureSize == 0 {
 			err = errors.InvalidDataFormat
 		}
 
-		signaturesSizes = append(signaturesSizes, claimSize)
+		signaturesSizes = append(signaturesSizes, signatureSize)
 	}
 
 	offset = common.Uint16ByteSize

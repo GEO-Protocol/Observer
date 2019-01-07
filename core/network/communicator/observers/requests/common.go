@@ -24,7 +24,7 @@ func newRequest(destinationObservers []uint16) request {
 	}
 }
 
-func (r *request) ObserverNumber() uint16 {
+func (r *request) ObserverIndex() uint16 {
 	return r.observerNumber
 }
 
@@ -32,7 +32,7 @@ func (r *request) DestinationObservers() []uint16 {
 	return r.destinationObservers
 }
 
-func (r *request) SetObserverNumber(number uint16) {
+func (r *request) SetObserverIndex(number uint16) {
 	r.observerNumber = number
 }
 
@@ -48,8 +48,8 @@ func (r *request) UnmarshalBinary(data []byte) (err error) {
 // --------------------------------------------------------------------------------------------------------------------
 
 type Request interface {
-	SetObserverNumber(number uint16)
-	ObserverNumber() uint16
+	SetObserverIndex(number uint16)
+	ObserverIndex() uint16
 	MarshalBinary() ([]byte, error)
 	UnmarshalBinary([]byte) error
 }

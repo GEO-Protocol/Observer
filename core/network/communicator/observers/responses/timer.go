@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-type ResponseTimeFrame struct {
+type TimeFrame struct {
 	*response
 
 	FrameIndex      uint16
@@ -17,25 +17,25 @@ type ResponseTimeFrame struct {
 	// todo: add observer signature to prevent data obfuscation
 }
 
-func NewResponseTimeFrame(r requests.Request, observerIndex, index uint16, nanosecondsLeft uint64) *ResponseTimeFrame {
-	return &ResponseTimeFrame{
+func NewTimeFrame(r requests.Request, observerIndex, index uint16, nanosecondsLeft uint64) *TimeFrame {
+	return &TimeFrame{
 		response:        newResponse(r, observerIndex),
 		FrameIndex:      index,
 		NanosecondsLeft: nanosecondsLeft,
 	}
 }
 
-func (r *ResponseTimeFrame) Request() requests.Request {
+func (r *TimeFrame) Request() requests.Request {
 	return r.request
 }
 
-func (r *ResponseTimeFrame) MarshalBinary() ([]byte, error) {
+func (r *TimeFrame) MarshalBinary() ([]byte, error) {
 	return utils.ChainByteSlices(
 		utils.MarshalUint16(r.FrameIndex),
 		utils.MarshalUint64(r.NanosecondsLeft)), nil
 }
 
-func (r *ResponseTimeFrame) UnmarshalBinary(data []byte) (err error) {
+func (r *TimeFrame) UnmarshalBinary(data []byte) (err error) {
 	r.FrameIndex, err = utils.UnmarshalUint16(data[0:2])
 	if err != nil {
 		return

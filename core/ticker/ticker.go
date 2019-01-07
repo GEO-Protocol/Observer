@@ -1,4 +1,4 @@
-package timer
+package ticker
 
 import (
 	"geo-observers-blockchain/core/common"
@@ -16,9 +16,6 @@ import (
 //       to prevent permanent delta increasing and time frames shifting.
 
 const (
-	// todo: set to 30 seconds
-	kSynchronisationTimoutSeconds = 1
-
 	// WARN!
 	// Initial time frame index can't be 0, because it is valid index.
 	// It also can't be < 0, because of uint16.
@@ -32,12 +29,12 @@ const (
 //       It works well enough for beta and internal GEO Client development, and even for the test-net,
 //       but IT IS NOT READY for the production usage.
 
-type Timer struct {
+type Ticker struct {
 	OutgoingEventsTimeFrameEnd chan *EventTimeFrameEnd
-	OutgoingRequestsTimeFrames chan *requests.RequestSynchronisationTimeFrames
-	IncomingRequestsTimeFrames chan *requests.RequestSynchronisationTimeFrames
-	OutgoingResponsesTimeFrame chan *responses.ResponseTimeFrame
-	IncomingResponsesTimeFrame chan *responses.ResponseTimeFrame
+	OutgoingRequestsTimeFrames chan *requests.SynchronisationTimeFrames
+	IncomingRequestsTimeFrames chan *requests.SynchronisationTimeFrames
+	OutgoingResponsesTimeFrame chan *responses.TimeFrame
+	IncomingResponsesTimeFrame chan *responses.TimeFrame
 
 	settings *settings.Settings
 
@@ -57,9 +54,9 @@ type Timer struct {
 	// Time when synchronisation must be finished.
 	synchronisationDeadlineTimestamp time.Time
 
-	// If true - then timer is synchronized and is generating new ticks.
+	// If true - then ticker is synchronized and is generating new ticks.
 	// By default is set to "false", because it is expected,
-	// that timer would be synchronized first.
+	// that ticker would be synchronized first.
 	isTickerRunning bool
 
 	// Frame == current time window.
@@ -73,21 +70,21 @@ type Timer struct {
 	frame *EventTimeFrameEnd
 }
 
-func New(settings *settings.Settings, reporter *external.Reporter) *Timer {
+func New(settings *settings.Settings, reporter *external.Reporter) *Ticker {
 	initialConfiguration, _ := reporter.GetCurrentConfiguration()
 
-	return &Timer{
+	return &Ticker{
 		// Outgoing events channel is not buffered.
-		// It is better to lost timer tick, than process several ticks
+		// It is better to lost ticker tick, than process several ticks
 		// one by one without any delay, that might be considered as, malicious behaviour.
 		OutgoingEventsTimeFrameEnd: make(chan *EventTimeFrameEnd),
-		OutgoingRequestsTimeFrames: make(chan *requests.RequestSynchronisationTimeFrames, 1),
-		OutgoingResponsesTimeFrame: make(chan *responses.ResponseTimeFrame, 1),
+		OutgoingRequestsTimeFrames: make(chan *requests.SynchronisationTimeFrames, 1),
+		OutgoingResponsesTimeFrame: make(chan *responses.TimeFrame, 1),
 
 		// On synchronization stage,
-		// timer should be able to collect up to MAX OBSERVERS count of responses.
-		IncomingResponsesTimeFrame: make(chan *responses.ResponseTimeFrame, common.ObserversMaxCount),
-		IncomingRequestsTimeFrames: make(chan *requests.RequestSynchronisationTimeFrames, 1),
+		// ticker should be able to collect up to MAX OBSERVERS count of responses.
+		IncomingResponsesTimeFrame: make(chan *responses.TimeFrame, common.ObserversMaxCount),
+		IncomingRequestsTimeFrames: make(chan *requests.SynchronisationTimeFrames, 1),
 
 		// Internal events bus is used to control and to interrupt internal events loop.
 		internalEventsBus: make(chan interface{}, 1),
@@ -103,7 +100,7 @@ func New(settings *settings.Settings, reporter *external.Reporter) *Timer {
 	}
 }
 
-func (t *Timer) Run(errors chan error) {
+func (t *Ticker) Run(errors chan error) {
 	shortLoop := func() {
 		select {
 
@@ -180,9 +177,8 @@ func (t *Timer) Run(errors chan error) {
 	}
 }
 
-func (t *Timer) syncWithOtherObservers() {
-
-	t.synchronisationDeadlineTimestamp = time.Now().Add(time.Second * kSynchronisationTimoutSeconds)
+func (t *Ticker) syncWithOtherObservers() {
+	t.synchronisationDeadlineTimestamp = time.Now().Add(common.SynchronisationTimeRange)
 
 	setNextTick := func(offset time.Duration) {
 		t.nextFrameTimestamp = time.Now().Add(offset)
@@ -207,34 +203,33 @@ func (t *Timer) syncWithOtherObservers() {
 	}
 
 	// Request external observers for their current time frames data.
-	// Timer would process all collected responses and
+	// Ticker would process all collected responses and
 	// would adjust it's own configuration in accordance to the majority.
-	t.OutgoingRequestsTimeFrames <- &requests.RequestSynchronisationTimeFrames{}
+	t.OutgoingRequestsTimeFrames <- &requests.SynchronisationTimeFrames{}
 
-	t.log().Info("Time frames synchronization started...")
+	t.log().Info("Synchronization started")
 	collectResponses()
 
 	nextFrameOffset, nextFrameIndex, responsesCollected, err := t.processMajorityOfFrameResponses()
 	if err == errors2.EmptySequence {
-		t.log().Debug(
-			"Time frames synchronisation is done. " +
-				"NO RESPONSES was received and took into account.")
+		t.log().WithFields(
+			log.Fields{"ResponsesCount": 0}).Info("Synchronisation is done")
+		t.log().Warn("Independent time frames flow started")
 
 		// Use default block generation time range.
 		t.frame = &EventTimeFrameEnd{Index: nextFrameIndex}
 		setNextTick(common.AverageBlockGenerationTimeRange)
 
 	} else {
-		t.log().Debug(
-			"Time frames synchronisation is done, ",
-			responsesCollected, " respond(s) was took into account.")
+		t.log().WithFields(
+			log.Fields{"ResponsesCount": responsesCollected}).Info("Synchronisation is done")
 
 		t.frame = &EventTimeFrameEnd{Index: nextFrameIndex}
 		setNextTick(time.Nanosecond * time.Duration(nextFrameOffset))
 	}
 }
 
-func (t *Timer) processInternalEvent(event interface{}) error {
+func (t *Ticker) processInternalEvent(event interface{}) error {
 	switch event.(type) {
 	case *EventTickerStarted:
 		{
@@ -249,14 +244,14 @@ func (t *Timer) processInternalEvent(event interface{}) error {
 
 // processTimeFrameRequest schedules sending of response
 // with information about CURRENT time frame index and amount of nanoseconds to it's change.
-// In case if timer is in sync mode - it also adds amount of nanoseconds to the sync. finish.
-func (t *Timer) processTimeFrameRequest(request *requests.RequestSynchronisationTimeFrames) error {
+// In case if ticker is in sync mode - it also adds amount of nanoseconds to the sync. finish.
+func (t *Ticker) processTimeFrameRequest(request *requests.SynchronisationTimeFrames) error {
 
-	var response *responses.ResponseTimeFrame
+	var response *responses.TimeFrame
 
 	if !t.isTickerRunning {
 		if t.synchronisationDeadlineTimestamp.Second() == 0 {
-			// In case if timer is stopped, but is not in synchronisation phase -
+			// In case if ticker is stopped, but is not in synchronisation phase -
 			// no time frame response should be returned, but it's also not an error.
 			return nil
 		}
@@ -271,14 +266,14 @@ func (t *Timer) processTimeFrameRequest(request *requests.RequestSynchronisation
 	}
 
 	if t.frame.Index == kInitialTimeFrameIndex {
-		response = responses.NewResponseTimeFrame(
+		response = responses.NewTimeFrame(
 			request,
 			conf.CurrentObserverIndex,
 			0,
 			uint64(kNextFrameTimeLeft))
 
 	} else {
-		response = responses.NewResponseTimeFrame(
+		response = responses.NewTimeFrame(
 			request,
 			conf.CurrentObserverIndex,
 			t.frame.Index,
@@ -294,7 +289,7 @@ func (t *Timer) processTimeFrameRequest(request *requests.RequestSynchronisation
 	}
 }
 
-func (t *Timer) processTick() {
+func (t *Ticker) processTick() {
 	nextFrameNumber := t.frame.Index + 1
 	if nextFrameNumber == common.ObserversMaxCount {
 		nextFrameNumber = 0
@@ -304,9 +299,9 @@ func (t *Timer) processTick() {
 	// New event always must replace previous one.
 	// Do not update event's fields directly!
 	t.frame = &EventTimeFrameEnd{
-		Index:                  nextFrameNumber,
-		Conf:                   t.frame.Conf,
-		SilencePeriodTimestamp: time.Now().Add(-common.BlockGenerationSilencePeriod),
+		Index:               nextFrameNumber,
+		Conf:                t.frame.Conf,
+		FinalStageTimestamp: time.Now().Add(-common.BlockGenerationSilencePeriod),
 	}
 
 	select {
@@ -321,7 +316,7 @@ func (t *Timer) processTick() {
 // Might be called several times during frame processing:
 // each time the result would be les than the previous,
 // so it is ok for events to interrupt internal events loop.
-func (t *Timer) nextFrameTimeLeft() (d time.Duration) {
+func (t *Ticker) nextFrameTimeLeft() (d time.Duration) {
 	timeLeft := t.nextFrameTimestamp.Sub(time.Now())
 	if timeLeft <= 0 {
 		t.nextFrameTimestamp = time.Now().Add(
@@ -334,13 +329,13 @@ func (t *Timer) nextFrameTimeLeft() (d time.Duration) {
 	return timeLeft
 }
 
-func (t *Timer) reconfigureFrames(e *external.EventConfigurationChanged) {
+func (t *Ticker) reconfigureFrames(e *external.EventConfigurationChanged) {
 	// todo: implement on the ethereum connection implementation stage
 }
 
 // processMajorityAndCalculateAverageNextFrameTTL returns average time offset.
 // Returns 0 in case if no offset is present if offsets.
-func (t *Timer) processMajorityAndCalculateAverageNextFrameTTL(majorityOfTimeOffsets []uint64) uint64 {
+func (t *Ticker) processMajorityAndCalculateAverageNextFrameTTL(majorityOfTimeOffsets []uint64) uint64 {
 	if len(majorityOfTimeOffsets) == 0 {
 		return 0
 	}
@@ -360,7 +355,7 @@ func (t *Timer) processMajorityAndCalculateAverageNextFrameTTL(majorityOfTimeOff
 // finds the majority of the responses, checks if majority has reached the consensus,
 // and collects time offsets of the observers, that has fit into the majority.
 // Returns error in case if consensus has not been reached.
-func (t *Timer) processMajorityOfFrameResponses() (
+func (t *Ticker) processMajorityOfFrameResponses() (
 	timeOffsetNanoseconds uint64, nextFrameIndex uint16, collectedResponsesCount uint16, err error) {
 	collectedResponsesCount = uint16(len(t.IncomingResponsesTimeFrame))
 	if collectedResponsesCount == 0 {
@@ -422,6 +417,6 @@ func (t *Timer) processMajorityOfFrameResponses() (
 	return
 }
 
-func (t *Timer) log() *log.Entry {
-	return log.WithFields(log.Fields{"subsystem": "timer"})
+func (t *Ticker) log() *log.Entry {
+	return log.WithFields(log.Fields{"prefix": "Ticker"})
 }

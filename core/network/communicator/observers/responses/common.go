@@ -9,7 +9,7 @@ type Response interface {
 	MarshalBinary() ([]byte, error)
 	UnmarshalBinary([]byte) error
 	Request() requests.Request
-	ObserverNumber() uint16
+	ObserverIndex() uint16
 }
 
 type response struct {
@@ -28,7 +28,7 @@ func (r *response) Request() requests.Request {
 	return r.request
 }
 
-func (r *response) ObserverNumber() uint16 {
+func (r *response) ObserverIndex() uint16 {
 	return r.observerNumber
 }
 

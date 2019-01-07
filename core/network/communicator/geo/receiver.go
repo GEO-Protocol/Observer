@@ -14,8 +14,6 @@ import (
 )
 
 const (
-	Subsystem = "GEO Nodes Receiver"
-
 	// Traffic status codes
 	TransferStatusOK    = 0
 	TransferStatusError = 1
@@ -48,6 +46,11 @@ func (r *Receiver) Run(host string, port uint16, errors chan<- error) {
 	// Inform outer scope that initialisation was performed well
 	// and no errors has been occurred.
 	errors <- nil
+
+	r.log().WithFields(log.Fields{
+		"Host": host,
+		"Port": port,
+	}).Info("Started")
 
 	for {
 		conn, err := listener.Accept()
@@ -197,5 +200,5 @@ func (r *Receiver) logEgress(bytesSent int, conn net.Conn) {
 }
 
 func (r *Receiver) log() *log.Entry {
-	return log.WithFields(log.Fields{"Subsystem": "[" + Subsystem + "]"})
+	return log.WithFields(log.Fields{"prefix": "Network/GEO"})
 }

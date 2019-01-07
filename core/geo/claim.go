@@ -1,11 +1,13 @@
 package geo
 
 import (
+	"bytes"
 	"geo-observers-blockchain/core/common"
 	"geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/common/types/transactions"
 	"geo-observers-blockchain/core/crypto/lamport"
 	"geo-observers-blockchain/core/utils"
+	"sort"
 )
 
 type Claim struct {
@@ -91,6 +93,32 @@ func (c *Claims) Add(claim *Claim) error {
 
 func (c *Claims) Count() uint16 {
 	return uint16(len(c.At))
+}
+
+// todo: tests needed
+func (c *Claims) Sort() (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = r.(error)
+			return
+		}
+	}()
+
+	sort.Slice(c.At, func(i, j int) bool {
+		aBinaryData, err := c.At[i].MarshalBinary()
+		if err != nil {
+			panic(err)
+		}
+
+		bBinaryData, err := c.At[j].MarshalBinary()
+		if err != nil {
+			panic(err)
+		}
+
+		return bytes.Compare(aBinaryData, bBinaryData) == -1
+	})
+
+	return
 }
 
 // Format:

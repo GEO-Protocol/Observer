@@ -3,9 +3,6 @@ package constants
 var (
 	// Range 0..63 is reserved for the future needs.
 
-	DataTypeBlockProposal  uint8 = 64
-	DataTypeBlockSignature uint8 = 65
-
 	// Requests and responses
 	DataTypeRequestTimeFrames uint8 = 128
 	DataTypeResponseTimeFrame uint8 = 129
@@ -15,12 +12,14 @@ var (
 
 	DataTypeRequestClaimBroadcast uint8 = 132
 	DataTypeResponseClaimApprove  uint8 = 133
+
+	DataTypeRequestDigestBroadcast uint8 = 134
+	DataTypeResponseDigestApprove  uint8 = 135
+
+	DataTypeRequestBlockSignaturesBroadcast uint8 = 136
 )
 
 var (
-	StreamTypeBlockProposal  = []byte{DataTypeBlockProposal}
-	StreamTypeBlockSignature = []byte{DataTypeBlockSignature}
-
 	// Requests and responses
 	StreamTypeRequestTimeFrames = []byte{DataTypeRequestTimeFrames}
 	StreamTypeResponseTimeFrame = []byte{DataTypeResponseTimeFrame}
@@ -30,4 +29,9 @@ var (
 
 	StreamTypeRequestClaimBroadcast = []byte{DataTypeRequestClaimBroadcast}
 	StreamTypeResponseClaimApprove  = []byte{DataTypeResponseClaimApprove}
+
+	StreamTypeRequestDigestBroadcast = []byte{DataTypeRequestDigestBroadcast}
+	StreamTypeResponseDigestApprove  = []byte{DataTypeResponseDigestApprove}
+
+	StreamTypeRequestBlockSignaturesBroadcast = []byte{DataTypeRequestBlockSignaturesBroadcast}
 )

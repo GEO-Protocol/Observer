@@ -1,4 +1,4 @@
-package chain
+package block
 
 import (
 	"geo-observers-blockchain/core/chain/signatures"
@@ -6,16 +6,13 @@ import (
 	"geo-observers-blockchain/core/utils"
 )
 
-type BlockSigned struct {
-	Data *ProposedBlockData
-
+type Signed struct {
+	Body       *Body
 	Signatures *signatures.IndexedObserversSignatures
-
-	// todo: add anchor to the external blockchain block number
 }
 
-func (b *BlockSigned) MarshalBinary() (data []byte, err error) {
-	dataBinary, err := b.Data.MarshalBinary()
+func (b *Signed) MarshalBinary() (data []byte, err error) {
+	dataBinary, err := b.Body.MarshalBinary()
 	if err != nil {
 		return
 	}
@@ -37,15 +34,15 @@ func (b *BlockSigned) MarshalBinary() (data []byte, err error) {
 	return
 }
 
-func (b *BlockSigned) UnmarshalBinary(data []byte) (err error) {
-
+func (b *Signed) UnmarshalBinary(data []byte) (err error) {
 	dataSize, err := utils.UnmarshalUint32(data[:common.Uint32ByteSize])
 	if err != nil {
 		return
 	}
 
 	offset := common.Uint32ByteSize
-	err = b.Data.UnmarshalBinary(data[offset : offset+int(dataSize)])
+	b.Body = &Body{}
+	err = b.Body.UnmarshalBinary(data[offset : offset+int(dataSize)])
 	if err != nil {
 		return
 	}
@@ -59,6 +56,7 @@ func (b *BlockSigned) UnmarshalBinary(data []byte) (err error) {
 		int(signaturesSize) +
 		int(common.Uint16ByteSize)
 
+	b.Signatures = signatures.NewIndexedObserversSignatures(common.ObserversMaxCount)
 	err = b.Signatures.UnmarshalBinary(data[offset:totalSize])
 	return
 }

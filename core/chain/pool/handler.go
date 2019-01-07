@@ -8,6 +8,8 @@ import (
 	"geo-observers-blockchain/core/network/communicator/observers/requests"
 	"geo-observers-blockchain/core/network/communicator/observers/responses"
 	"geo-observers-blockchain/core/network/external"
+	log "github.com/sirupsen/logrus"
+	"reflect"
 	"time"
 )
 
@@ -26,13 +28,13 @@ type Handler struct {
 
 	// Requests and responses,
 	// that was received from external observers.
-	IncomingRequestsInstanceBroadcast  chan *requests.RequestPoolInstanceBroadcast
-	IncomingResponsesInstanceBroadcast chan *responses.ResponsePoolInstanceBroadcastApprove
+	IncomingRequestsInstanceBroadcast  chan *requests.PoolInstanceBroadcast
+	IncomingResponsesInstanceBroadcast chan *responses.PoolInstanceBroadcastApprove
 
 	// Requests and responses that should be scheduled
 	// for the sending to the external observers.
-	OutgoingRequestsInstanceBroadcast  chan *requests.RequestPoolInstanceBroadcast
-	OutgoingResponsesInstanceBroadcast chan *responses.ResponsePoolInstanceBroadcastApprove
+	OutgoingRequestsInstanceBroadcast  chan *requests.PoolInstanceBroadcast
+	OutgoingResponsesInstanceBroadcast chan *responses.PoolInstanceBroadcastApprove
 
 	internalEventsBus chan interface{}
 
@@ -57,10 +59,10 @@ func NewHandler(reporter *external.Reporter) *Handler {
 
 		// The same as IncomingInstances,
 		// but for receiving claims and TSLs from the other observers.
-		IncomingRequestsInstanceBroadcast:  make(chan *requests.RequestPoolInstanceBroadcast, 64),
-		OutgoingRequestsInstanceBroadcast:  make(chan *requests.RequestPoolInstanceBroadcast, 64),
-		IncomingResponsesInstanceBroadcast: make(chan *responses.ResponsePoolInstanceBroadcastApprove, 64),
-		OutgoingResponsesInstanceBroadcast: make(chan *responses.ResponsePoolInstanceBroadcastApprove, 64),
+		IncomingRequestsInstanceBroadcast:  make(chan *requests.PoolInstanceBroadcast, 64),
+		OutgoingRequestsInstanceBroadcast:  make(chan *requests.PoolInstanceBroadcast, 64),
+		IncomingResponsesInstanceBroadcast: make(chan *responses.PoolInstanceBroadcastApprove, 64),
+		OutgoingResponsesInstanceBroadcast: make(chan *responses.PoolInstanceBroadcastApprove, 64),
 
 		internalEventsBus: make(
 			chan interface{},
@@ -102,6 +104,9 @@ func (h *Handler) Run(globalErrorsFlow chan<- error) {
 		case _ = <-time.After(kTimeoutItemsSynchronisation):
 			processErrorIfAny(
 				h.processItemsSynchronisation())
+
+		case event := <-h.internalEventsBus:
+			h.processInternalEvent(event)
 		}
 	}
 }
@@ -110,19 +115,41 @@ func (h *Handler) Run(globalErrorsFlow chan<- error) {
 // that has been approved to be synchronised by the majority of the observers pools.
 // This instances are ready to be included into the next block.
 //
-// Results are returned in channel to make it possible
+// Instances are returned in channel to make it possible
 // to call this method safely from other goroutines.
-func (h *Handler) BlockReadyInstances() (channel chan instances, err error) {
-	channel = make(chan instances, 1)
-	event := &BlockReadyInstancesRequest{
-		ResultsChannel: channel,
+func (h *Handler) BlockReadyInstances() (channel chan *instances, errors chan error) {
+	channel = make(chan *instances, 1)
+	errors = make(chan error, 1)
+
+	h.internalEventsBus <- &EventBlockReadyInstancesRequest{
+		Results: channel,
+		Errors:  errors,
 	}
 
-	select {
-	case h.internalEventsBus <- event:
+	return
+}
 
-	default:
-		err = errors.ChannelTransferringFailed
+func (h *Handler) BlockReadyInstancesByHashes(
+	hashes []hash.SHA256Container) (channel chan *instances, errors chan error) {
+
+	channel = make(chan *instances, 1)
+	errors = make(chan error, 1)
+
+	h.internalEventsBus <- &EventBlockReadyInstancesByHashesRequest{
+		Instances: channel,
+		Errors:    errors,
+		Hashes:    hashes,
+	}
+
+	return
+}
+
+func (h *Handler) DropInstances(hashes []hash.SHA256Container) (errors chan error) {
+	errors = make(chan error, 1)
+
+	h.internalEventsBus <- &EventItemsDroppingRequest{
+		Errors: errors,
+		Hashes: hashes,
 	}
 
 	return
@@ -157,9 +184,9 @@ func (h *Handler) processNewInstance(i instance, conf *external.Configuration) (
 // also sent a copy of this info the rest of observers.
 // In case if no - it would be obvious on block generation stage.
 func (h *Handler) processNewInstanceRequest(
-	r *requests.RequestPoolInstanceBroadcast, conf *external.Configuration) (err error) {
+	r *requests.PoolInstanceBroadcast, conf *external.Configuration) (err error) {
 
-	if r.ObserverNumber() == conf.CurrentObserverIndex {
+	if r.ObserverIndex() == conf.CurrentObserverIndex {
 		err = errors.SuspiciousOperation
 		return
 	}
@@ -192,11 +219,11 @@ func (h *Handler) processNewInstanceRequest(
 		// In case if record is present - than it seems that request has been received
 		// from the observer, that repeats it's request.
 		// In this case - only vote of this observer must be rewritten.
-		record.Approves[r.ObserverNumber()] = true
+		record.Approves[r.ObserverIndex()] = true
 	}
 
 	// Send approve to the observer, that has generated the request.
-	response := responses.NewResponsePoolInstanceBroadcastApprove(
+	response := responses.NewPoolInstanceBroadcastApprove(
 		r, conf.CurrentObserverIndex, &key)
 
 	select {
@@ -211,14 +238,14 @@ func (h *Handler) processNewInstanceRequest(
 
 // processNewInstanceResponse handles responses from external observers to the requests for instances approves.
 func (h *Handler) processNewInstanceResponse(
-	r *responses.ResponsePoolInstanceBroadcastApprove, conf *external.Configuration) (err error) {
+	r *responses.PoolInstanceBroadcastApprove, conf *external.Configuration) (err error) {
 
 	record, err := h.pool.ByHash(r.Hash)
 	if err != nil {
 		return
 	}
 
-	record.Approves[r.ObserverNumber()] = true
+	record.Approves[r.ObserverIndex()] = true
 	return
 }
 
@@ -250,6 +277,7 @@ func (h *Handler) processItemsSynchronisation() (err error) {
 
 // requestRecordBroadcast checks which observers has not approved which items,
 // and sens them to corresponding observers.
+// todo: think what to do with the items, that can't be sync too long.
 func (h *Handler) requestRecordBroadcast(record *Record) (err error) {
 	record.LastSyncAttempt = time.Now()
 
@@ -260,7 +288,7 @@ func (h *Handler) requestRecordBroadcast(record *Record) (err error) {
 		}
 	}
 
-	request := requests.NewRequestPoolInstanceBroadcast(destinationObservers, record.Instance)
+	request := requests.NewPoolInstanceBroadcast(destinationObservers, record.Instance)
 	select {
 	case h.OutgoingRequestsInstanceBroadcast <- request:
 
@@ -269,4 +297,60 @@ func (h *Handler) requestRecordBroadcast(record *Record) (err error) {
 	}
 
 	return
+}
+
+func (h *Handler) processInternalEvent(event interface{}) {
+	switch event.(type) {
+	case *EventBlockReadyInstancesRequest:
+		h.blockReadyItems(event.(*EventBlockReadyInstancesRequest))
+
+	case *EventBlockReadyInstancesByHashesRequest:
+		h.blockReadyItemsByHashes(event.(*EventBlockReadyInstancesByHashesRequest))
+
+	case *EventItemsDroppingRequest:
+		h.dropItemsByHashes(event.(*EventItemsDroppingRequest))
+
+	default:
+		h.log().Error("Unexpected event type occurred: ", reflect.TypeOf(event).String())
+	}
+}
+
+func (h *Handler) blockReadyItems(event *EventBlockReadyInstancesRequest) {
+	blockReadyItems := &instances{}
+
+	for _, record := range h.pool.index {
+		if record.IsMajorityApprovesCollected() == false {
+			blockReadyItems.At = append(blockReadyItems.At, record.Instance)
+		}
+	}
+
+	event.Results <- blockReadyItems
+}
+
+func (h *Handler) blockReadyItemsByHashes(event *EventBlockReadyInstancesByHashesRequest) {
+	blockReadyItems := &instances{}
+
+	for _, key := range event.Hashes {
+		record, err := h.pool.ByHash(&key)
+		if err != nil {
+			event.Errors <- err
+			return
+		}
+
+		blockReadyItems.At = append(blockReadyItems.At, record.Instance)
+	}
+
+	event.Instances <- blockReadyItems
+}
+
+func (h *Handler) dropItemsByHashes(event *EventItemsDroppingRequest) {
+	for _, instanceHash := range event.Hashes {
+		h.pool.Remove(&instanceHash)
+	}
+
+	event.Errors <- nil
+}
+
+func (h *Handler) log() *log.Entry {
+	return log.WithFields(log.Fields{"prefix": "Pool Handler"})
 }

@@ -1,11 +1,13 @@
 package geo
 
 import (
+	"bytes"
 	"geo-observers-blockchain/core/common"
 	"geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/common/types/transactions"
 	"geo-observers-blockchain/core/crypto/lamport"
 	"geo-observers-blockchain/core/utils"
+	"sort"
 )
 
 type TransactionSignaturesList struct {
@@ -86,6 +88,32 @@ func (t *TransactionSignaturesLists) Add(tsl *TransactionSignaturesList) error {
 
 func (t *TransactionSignaturesLists) Count() uint16 {
 	return uint16(len(t.At))
+}
+
+// todo: tests needed
+func (t *TransactionSignaturesLists) Sort() (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = r.(error)
+			return
+		}
+	}()
+
+	sort.Slice(t.At, func(i, j int) bool {
+		aBinaryData, err := t.At[i].MarshalBinary()
+		if err != nil {
+			panic(err)
+		}
+
+		bBinaryData, err := t.At[j].MarshalBinary()
+		if err != nil {
+			panic(err)
+		}
+
+		return bytes.Compare(aBinaryData, bBinaryData) == -1
+	})
+
+	return
 }
 
 // Format:

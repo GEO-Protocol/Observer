@@ -3,6 +3,7 @@ package logger
 import (
 	"geo-observers-blockchain/core/settings"
 	log "github.com/sirupsen/logrus"
+	"github.com/x-cray/logrus-prefixed-formatter"
 	"os"
 )
 
@@ -17,8 +18,8 @@ func InitLogger(conf *settings.Settings) *os.File {
 		log.SetFormatter(&log.JSONFormatter{})
 
 	} else {
-		log.SetLevel(log.DebugLevel)
-		log.SetFormatter(&log.TextFormatter{
+		log.SetLevel(log.TraceLevel)
+		log.SetFormatter(&prefixed.TextFormatter{
 			FullTimestamp: true,
 		})
 	}

@@ -7,8 +7,10 @@ import (
 	"encoding/pem"
 	"fmt"
 	"geo-observers-blockchain/core/common/errors"
+	"geo-observers-blockchain/core/crypto/keystore"
 	"geo-observers-blockchain/core/settings"
 	"io/ioutil"
+	"math"
 	"os"
 )
 
@@ -17,58 +19,53 @@ var (
 	number        int32          = -1
 )
 
-// todo: implement
 // todo: comments
 type Reporter struct {
 	settings *settings.Settings
+	keystore *keystore.KeyStore
 }
 
-func NewReporter(settings *settings.Settings) *Reporter {
-	return &Reporter{
+func NewReporter(settings *settings.Settings, keystore *keystore.KeyStore) (reporter *Reporter) {
+	reporter = &Reporter{
 		settings: settings,
+		keystore: keystore,
 	}
+
+	return
 }
 
 // todo: cache the results internally
-func (r *Reporter) GetCurrentConfiguration() (*Configuration, error) {
-	configuration = r.temptStaticConfiguration()
-
-	for i, observer := range configuration.Observers {
-		if observer.Host == r.settings.Observers.GNS.Host && observer.Port == r.settings.Observers.GNS.Port {
-			configuration.CurrentObserverIndex = uint16(i)
-		}
-	}
-
-	return r.temptStaticConfiguration(), nil
+func (r *Reporter) GetCurrentConfiguration() (conf *Configuration, err error) {
+	conf = r.temptStaticConfiguration()
+	conf.CurrentObserverIndex, err = r.GetCurrentObserverIndex()
+	return
 }
 
 // todo: cache the results
-func (r *Reporter) GetCurrentObserverNumber() (uint16, error) {
+func (r *Reporter) GetCurrentObserverIndex() (uint16, error) {
 	if number >= 0 {
 		return uint16(number), nil
 	}
 
 	conf := r.temptStaticConfiguration()
 	for i, observer := range conf.Observers {
-		if observer.Host == r.settings.Observers.Network.Host {
-			if observer.Port == r.settings.Observers.Network.Port {
-				number = int32(i)
-				return uint16(number), nil
-			}
+		if r.keystore.IsEqualPubKey(observer.PubKey) {
+			number = int32(i)
+			return uint16(number), nil
 		}
 	}
 
-	return 0, errors.NilParameter
+	return math.MaxUint16, errors.NilParameter
 }
 
 // todo: sort observers in strict order!
 func (r *Reporter) temptStaticConfiguration() *Configuration {
 	if configuration == nil {
 		observers := make([]*Observer, 0, 4)
-		observers = append(observers, NewObserver("127.0.0.1", 3000, r.tempLoadPublicKey(1)))
-		observers = append(observers, NewObserver("127.0.0.1", 3001, r.tempLoadPublicKey(2)))
-		observers = append(observers, NewObserver("127.0.0.1", 3002, r.tempLoadPublicKey(3)))
-		observers = append(observers, NewObserver("127.0.0.1", 3003, r.tempLoadPublicKey(4)))
+		observers = append(observers, NewObserver("127.0.0.1", 3000, r.tempLoadPublicKey(0)))
+		observers = append(observers, NewObserver("127.0.0.1", 3001, r.tempLoadPublicKey(1)))
+		observers = append(observers, NewObserver("127.0.0.1", 3002, r.tempLoadPublicKey(2)))
+		observers = append(observers, NewObserver("127.0.0.1", 3003, r.tempLoadPublicKey(3)))
 
 		configuration = NewConfiguration(0, r.sortObservers(observers))
 	}

@@ -7,6 +7,7 @@ import (
 	"encoding/pem"
 	"geo-observers-blockchain/core/common/types/hash"
 	"geo-observers-blockchain/core/crypto/ecdsa"
+	log "github.com/sirupsen/logrus"
 	"io/ioutil"
 	"os"
 )
@@ -33,6 +34,11 @@ func New() (keystore *KeyStore, err error) {
 	}
 
 	return
+}
+
+func (k *KeyStore) IsEqualPubKey(key *e.PublicKey) bool {
+	return k.pkey.PublicKey.X.Cmp(key.X) == 0 &&
+		k.pkey.PublicKey.Y.Cmp(key.Y) == 0
 }
 
 func (k *KeyStore) SignHash(h hash.SHA256Container) (signature *ecdsa.Signature, err error) {
@@ -75,4 +81,8 @@ func (k *KeyStore) decodePKeyFromPem(pemEncodedPKey string) (err error) {
 	block, _ := pem.Decode([]byte(pemEncodedPKey))
 	k.pkey, err = x509.ParseECPrivateKey(block.Bytes)
 	return
+}
+
+func (k *KeyStore) log() *log.Entry {
+	return log.WithFields(log.Fields{"prefix": "keystore"})
 }
