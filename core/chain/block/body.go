@@ -115,6 +115,11 @@ func (body *Body) GenerateDigest() (digest *Digest, err error) {
 }
 
 func (body *Body) MarshalBinary() (data []byte, err error) {
+	blockHashData, err := body.Hash.MarshalBinary()
+	if err != nil {
+		return
+	}
+
 	observersConfHashData, err := body.ObserversConfHash.MarshalBinary()
 	if err != nil {
 		return
@@ -134,6 +139,7 @@ func (body *Body) MarshalBinary() (data []byte, err error) {
 		utils.MarshalUint64(body.Index),
 		utils.MarshalUint64(body.ExternalChainHeight),
 		utils.MarshalUint16(body.AuthorObserverIndex),
+		blockHashData,
 		observersConfHashData,
 
 		utils.MarshalUint16(uint16(len(claimsData))),
@@ -148,9 +154,10 @@ func (body *Body) UnmarshalBinary(data []byte) (err error) {
 		offsetHeight                = 0
 		offsetExternalChainHeight   = offsetHeight + common.Uint64ByteSize
 		offsetAuthorPosition        = offsetExternalChainHeight + common.Uint64ByteSize
-		offsetObserversConfHashData = offsetAuthorPosition + common.Uint16ByteSize
-		fieldOffsetClaimsSize       = offsetObserversConfHashData + hash.BytesSize
-		offsetVariadicLengthData    = fieldOffsetClaimsSize + common.Uint16ByteSize
+		offsetBlockHashData         = offsetAuthorPosition + common.Uint16ByteSize
+		offsetObserversConfHashData = offsetBlockHashData + hash.BytesSize
+		offsetClaimsSize            = offsetObserversConfHashData + hash.BytesSize
+		offsetVariadicLengthData    = offsetClaimsSize + common.Uint16ByteSize
 	)
 
 	body.Index, err = utils.UnmarshalUint64(data[offsetHeight:offsetExternalChainHeight])
@@ -163,17 +170,22 @@ func (body *Body) UnmarshalBinary(data []byte) (err error) {
 		return
 	}
 
-	body.AuthorObserverIndex, err = utils.UnmarshalUint16(data[offsetAuthorPosition:offsetObserversConfHashData])
+	body.AuthorObserverIndex, err = utils.UnmarshalUint16(data[offsetAuthorPosition:offsetBlockHashData])
 	if err != nil {
 		return
 	}
 
-	err = body.ObserversConfHash.UnmarshalBinary(data[offsetObserversConfHashData:fieldOffsetClaimsSize])
+	err = body.Hash.UnmarshalBinary(data[offsetBlockHashData:offsetObserversConfHashData])
 	if err != nil {
 		return
 	}
 
-	claimsDataSegmentSize, err := utils.UnmarshalUint16(data[fieldOffsetClaimsSize:offsetVariadicLengthData])
+	err = body.ObserversConfHash.UnmarshalBinary(data[offsetObserversConfHashData:offsetClaimsSize])
+	if err != nil {
+		return
+	}
+
+	claimsDataSegmentSize, err := utils.UnmarshalUint16(data[offsetClaimsSize:offsetVariadicLengthData])
 	if err != nil {
 		return
 	}

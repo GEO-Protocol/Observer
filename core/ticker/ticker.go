@@ -107,16 +107,12 @@ func (t *Ticker) Run(errors chan error) {
 		// todo: reconfigure frames on external observers configuration change
 
 		case timeFramesRequest := <-t.IncomingRequestsTimeFrames:
-			{
-				err := t.processTimeFrameRequest(timeFramesRequest)
-				errors2.SendErrorIfAny(err, errors)
-			}
+			err := t.processTimeFrameRequest(timeFramesRequest)
+			errors2.SendErrorIfAny(err, errors)
 
 		case event := <-t.internalEventsBus:
-			{
-				err := t.processInternalEvent(event)
-				errors2.SendErrorIfAny(err, errors)
-			}
+			err := t.processInternalEvent(event)
+			errors2.SendErrorIfAny(err, errors)
 		}
 	}
 
@@ -126,21 +122,15 @@ func (t *Ticker) Run(errors chan error) {
 		// todo: reconfigure frames on external observers configuration change
 
 		case _ = <-time.After(t.nextFrameTimeLeft()):
-			{
-				t.processTick()
-			}
+			t.processTick()
 
 		case timeFramesRequest := <-t.IncomingRequestsTimeFrames:
-			{
-				err := t.processTimeFrameRequest(timeFramesRequest)
-				errors2.SendErrorIfAny(err, errors)
-			}
+			err := t.processTimeFrameRequest(timeFramesRequest)
+			errors2.SendErrorIfAny(err, errors)
 
 		case event := <-t.internalEventsBus:
-			{
-				err := t.processInternalEvent(event)
-				errors2.SendErrorIfAny(err, errors)
-			}
+			err := t.processInternalEvent(event)
+			errors2.SendErrorIfAny(err, errors)
 		}
 	}
 
@@ -151,15 +141,15 @@ func (t *Ticker) Run(errors chan error) {
 	//
 	// todo: add support of short blocks timeouts.
 
-	// todo: bring me back
-	//var (
-	//	kMinimalTimeFramesExchangeTimeoutSeconds = 20
-	//	kMinimalAppropriateTimeoutSeconds        = int(constants.AverageBlockGenerationTimeRange.Seconds()) -
-	//		kMinimalTimeFramesExchangeTimeoutSeconds
-	//)
-	//if kSynchronisationTimoutSeconds >= kMinimalAppropriateTimeoutSeconds {
-	//	panic(ErrInvalidSynchronisationTimeout)
-	//}
+	var (
+		kMinimalTimeFramesExchangeTimeoutSeconds = 2
+		kMinimalAppropriateTimeoutSeconds        = int(common.AverageBlockGenerationTimeRange.Seconds()) -
+			kMinimalTimeFramesExchangeTimeoutSeconds
+	)
+	if int(common.TickerSynchronisationTimeRange.Seconds()) >= kMinimalAppropriateTimeoutSeconds {
+		// todo: replace panic
+		panic(ErrInvalidSynchronisationTimeout)
+	}
 
 	// Attempt to sync with other observers before any operations processing.
 	// It is asynchronous operation, so it must be launched in goroutine
@@ -178,7 +168,7 @@ func (t *Ticker) Run(errors chan error) {
 }
 
 func (t *Ticker) syncWithOtherObservers() {
-	t.synchronisationDeadlineTimestamp = time.Now().Add(common.SynchronisationTimeRange)
+	t.synchronisationDeadlineTimestamp = time.Now().Add(common.TickerSynchronisationTimeRange)
 
 	setNextTick := func(offset time.Duration) {
 		t.nextFrameTimestamp = time.Now().Add(offset)
@@ -246,9 +236,6 @@ func (t *Ticker) processInternalEvent(event interface{}) error {
 // with information about CURRENT time frame index and amount of nanoseconds to it's change.
 // In case if ticker is in sync mode - it also adds amount of nanoseconds to the sync. finish.
 func (t *Ticker) processTimeFrameRequest(request *requests.SynchronisationTimeFrames) error {
-
-	var response *responses.TimeFrame
-
 	if !t.isTickerRunning {
 		if t.synchronisationDeadlineTimestamp.Second() == 0 {
 			// In case if ticker is stopped, but is not in synchronisation phase -
@@ -257,27 +244,25 @@ func (t *Ticker) processTimeFrameRequest(request *requests.SynchronisationTimeFr
 		}
 	}
 
-	kNextFrameTimeLeft := common.AverageBlockGenerationTimeRange.Nanoseconds() +
-		t.synchronisationDeadlineTimestamp.Sub(time.Now()).Nanoseconds()
-
 	conf, err := t.confReporter.GetCurrentConfiguration()
 	if err != nil {
 		return err
 	}
 
+	var response *responses.TimeFrame
 	if t.frame.Index == kInitialTimeFrameIndex {
 		response = responses.NewTimeFrame(
 			request,
 			conf.CurrentObserverIndex,
 			0,
-			uint64(kNextFrameTimeLeft))
+			uint64(t.nextFrameTimeLeft().Nanoseconds()))
 
 	} else {
 		response = responses.NewTimeFrame(
 			request,
 			conf.CurrentObserverIndex,
 			t.frame.Index,
-			uint64(kNextFrameTimeLeft))
+			uint64(t.nextFrameTimeLeft().Nanoseconds()))
 	}
 
 	select {
@@ -296,7 +281,7 @@ func (t *Ticker) processTick() {
 	}
 
 	// Warn!
-	// New event always must replace previous one.
+	// Fatal event always must replace previous one.
 	// Do not update event's fields directly!
 	t.frame = &EventTimeFrameEnd{
 		Index:               nextFrameNumber,
@@ -306,9 +291,8 @@ func (t *Ticker) processTick() {
 
 	select {
 	case t.OutgoingEventsTimeFrameEnd <- t.frame:
-		{
-		}
 	default:
+		t.log().Error("tick transfer error")
 	}
 }
 
@@ -317,6 +301,10 @@ func (t *Ticker) processTick() {
 // each time the result would be les than the previous,
 // so it is ok for events to interrupt internal events loop.
 func (t *Ticker) nextFrameTimeLeft() (d time.Duration) {
+	defer func() {
+		t.log().Trace(d.Seconds())
+	}()
+
 	timeLeft := t.nextFrameTimestamp.Sub(time.Now())
 	if timeLeft <= 0 {
 		t.nextFrameTimestamp = time.Now().Add(

@@ -1,7 +1,7 @@
 package core
 
 import (
-	"geo-observers-blockchain/core/chain"
+	"geo-observers-blockchain/core/chain/chain"
 	"geo-observers-blockchain/core/chain/pool"
 	"geo-observers-blockchain/core/crypto/keystore"
 	"geo-observers-blockchain/core/geo"
@@ -29,6 +29,7 @@ type Core struct {
 	poolClaims            *pool.Handler
 	poolTSLs              *pool.Handler
 	blocksProducer        *chain.Producer
+	composer              *chain.Composer
 }
 
 func New(conf *settings.Settings) (core *Core, err error) {
@@ -38,7 +39,8 @@ func New(conf *settings.Settings) (core *Core, err error) {
 	}
 
 	reporter := external.NewReporter(conf, k)
-	producer, err := chain.NewProducer(conf, reporter, k)
+	composer := chain.NewComposer(reporter, conf)
+	producer, err := chain.NewProducer(conf, reporter, k, composer)
 
 	core = &Core{
 		settings:              conf,
@@ -51,6 +53,7 @@ func New(conf *settings.Settings) (core *Core, err error) {
 		poolClaims:            pool.NewHandler(reporter),
 		poolTSLs:              pool.NewHandler(reporter),
 		blocksProducer:        producer,
+		composer:              composer,
 	}
 
 	return
@@ -104,14 +107,12 @@ func (c *Core) initNetwork(errors chan error) {
 }
 
 func (c *Core) initProcessing(globalErrorsFlow chan error) {
+	go c.timer.Run(globalErrorsFlow)
 	go c.poolClaims.Run(globalErrorsFlow)
 	go c.poolTSLs.Run(globalErrorsFlow)
+	go c.blocksProducer.Run(globalErrorsFlow)
 
 	go c.dispatchDataFlows(globalErrorsFlow)
-	go c.timer.Run(globalErrorsFlow)
-
-	// todo: ensure chain is in sync with the majority of the observers.
-	go c.blocksProducer.Run(globalErrorsFlow)
 }
 
 func (c *Core) dispatchDataFlows(globalErrorsFlow chan error) {
@@ -164,6 +165,20 @@ func (c *Core) dispatchDataFlows(globalErrorsFlow chan error) {
 			case c.senderObservers.OutgoingRequests <- outgoingRequestBlockSignaturesBroadcast:
 			default:
 				processTransferringFail(outgoingRequestBlockSignaturesBroadcast, c.senderObservers)
+			}
+
+		case outgoingRequestChainTop := <-c.composer.OutgoingRequestsChainTop:
+			select {
+			case c.senderObservers.OutgoingRequests <- outgoingRequestChainTop:
+			default:
+				processTransferringFail(outgoingRequestChainTop, c.senderObservers)
+			}
+
+		case outgoingResponseChainTop := <-c.blocksProducer.OutgoingResponsesChainTop:
+			select {
+			case c.senderObservers.OutgoingResponses <- outgoingResponseChainTop:
+			default:
+				processTransferringFail(outgoingResponseChainTop, c.senderObservers)
 			}
 
 		// GEO Nodes Receiver
@@ -294,6 +309,13 @@ func (c *Core) processIncomingRequest(r requests.Request) (err error) {
 			processTransferringFail(r, c.blocksProducer)
 		}
 
+	case *requests.ChainTop:
+		select {
+		case c.blocksProducer.IncomingRequestsChainTop <- r.(*requests.ChainTop):
+		default:
+			processTransferringFail(r, c.blocksProducer)
+		}
+
 	default:
 		err = utils.Error("core", "unexpected request type occurred")
 	}
@@ -340,6 +362,13 @@ func (c *Core) processIncomingResponse(r responses.Response) (err error) {
 	case *responses.CandidateDigestApprove:
 		select {
 		case c.blocksProducer.IncomingResponsesCandidateDigestApprove <- r.(*responses.CandidateDigestApprove):
+		default:
+			processTransferringFail(r, c.blocksProducer)
+		}
+
+	case *responses.ChainTop:
+		select {
+		case c.composer.IncomingResponsesChainTop <- r.(*responses.ChainTop):
 		default:
 			processTransferringFail(r, c.blocksProducer)
 		}

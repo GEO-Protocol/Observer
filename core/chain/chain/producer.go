@@ -38,6 +38,8 @@ type Producer struct {
 	IncomingResponsesCandidateDigestApprove  chan *responses.CandidateDigestApprove
 	OutgoingRequestsBlockSignaturesBroadcast chan *requests.BlockSignaturesBroadcast
 	IncomingRequestsBlockSignatures          chan *requests.BlockSignaturesBroadcast
+	IncomingRequestsChainTop                 chan *requests.ChainTop
+	OutgoingResponsesChainTop                chan *responses.ChainTop
 
 	IncomingEventTimeFrameEnded chan *ticker.EventTimeFrameEnd
 
@@ -46,19 +48,15 @@ type Producer struct {
 	reporter   *external.Reporter
 	poolTSLs   *pool.Handler
 	poolClaims *pool.Handler
-	chain      *Chain
+	composer   *Composer
 
+	chain     *Chain
 	nextBlock *block.Signed
 }
 
 func NewProducer(
 	conf *settings.Settings, reporter *external.Reporter,
-	keystore *keystore.KeyStore) (producer *Producer, err error) {
-
-	chain, err := NewChain()
-	if err != nil {
-		return
-	}
+	keystore *keystore.KeyStore, composer *Composer) (producer *Producer, err error) {
 
 	producer = &Producer{
 		OutgoingRequestsCandidateDigestBroadcast: make(
@@ -79,23 +77,47 @@ func NewProducer(
 		IncomingRequestsBlockSignatures: make(
 			chan *requests.BlockSignaturesBroadcast, 1),
 
+		IncomingRequestsChainTop:  make(chan *requests.ChainTop, 1),
+		OutgoingResponsesChainTop: make(chan *responses.ChainTop, 1),
+
 		IncomingEventTimeFrameEnded: make(chan *ticker.EventTimeFrameEnd, 1),
 
-		settings:   conf,
-		reporter:   reporter,
-		keystore:   keystore,
-		poolTSLs:   pool.NewHandler(reporter),
+		settings: conf,
+		reporter: reporter,
+		keystore: keystore,
+		poolTSLs: pool.NewHandler(reporter),
+		composer: composer,
+
 		poolClaims: pool.NewHandler(reporter),
-		chain:      chain,
 	}
 	return
 }
 
-func (p *Producer) Run(errors chan<- error) {
-	go p.poolClaims.Run(errors)
-	go p.poolTSLs.Run(errors)
+func (p *Producer) Run(globalErrorsFlow chan<- error) {
+	go p.poolClaims.Run(globalErrorsFlow)
+	go p.poolTSLs.Run(globalErrorsFlow)
+	go p.composer.Run(globalErrorsFlow)
 
 	conf, err := p.reporter.GetCurrentConfiguration()
+	if err != nil {
+		// todo: report fatal error instead of panic
+		panic(err)
+	}
+
+	p.chain, err = NewChain(DataFilePath)
+	if err != nil {
+		// todo: report fatal error instead of panic
+		panic(err)
+	}
+
+	syncResult := <-p.composer.SyncChain(p.chain)
+	if syncResult.Error != nil {
+		globalErrorsFlow <- errors.SyncFailed
+		return
+	}
+
+	// Chain must be recreated after sync
+	p.chain, err = NewChain(DataFilePath)
 	if err != nil {
 		// todo: report fatal error instead of panic
 		panic(err)
@@ -108,8 +130,34 @@ func (p *Producer) Run(errors chan<- error) {
 		case tick := <-p.IncomingEventTimeFrameEnded:
 			p.handleErrorIfAny(
 				p.processTick(tick, conf))
+
+		case incomingRequestChainTop := <-p.IncomingRequestsChainTop:
+			p.handleErrorIfAny(
+				p.processChainTopRequest(incomingRequestChainTop, conf))
 		}
 	}
+}
+
+func (p *Producer) processChainTopRequest(request *requests.ChainTop, conf *external.Configuration) (err error) {
+	requestedBlock, err := p.chain.BlockAt(request.LastBlockIndex)
+	if err != nil {
+		return
+	}
+
+	lastBlock, e := p.chain.LastBlock()
+	if e != nil {
+		return
+	}
+
+	select {
+	case p.OutgoingResponsesChainTop <- responses.NewChainTop(
+		request, conf.CurrentObserverIndex, &requestedBlock.Body.Hash, &lastBlock.Body.Hash):
+
+	default:
+		err = errors.ChannelTransferringFailed
+	}
+
+	return
 }
 
 func (p *Producer) processTick(tick *ticker.EventTimeFrameEnd, conf *external.Configuration) (err error) {
@@ -383,7 +431,7 @@ func (p *Producer) generateBlockCandidate(
 	}
 
 	nextIndex := p.chain.Height()
-	previousBlock, err := p.chain.At(nextIndex - 1)
+	previousBlock, err := p.chain.BlockAt(nextIndex - 1)
 	if err != nil {
 		return
 	}
@@ -409,8 +457,8 @@ func (p *Producer) generateBlockCandidate(
 
 	if p.settings.Debug {
 		p.log().WithFields(log.Fields{
-			"Index": candidate.Index,
-			"Hash":  candidate.Hash.Hex(),
+			"Index":        candidate.Index,
+			"TopBlockHash": candidate.Hash.Hex(),
 		}).Debug("Candidate block generated")
 	}
 
@@ -765,7 +813,7 @@ func (p *Producer) commitBlock(tick *ticker.EventTimeFrameEnd) (err error) {
 
 	p.log().WithFields(log.Fields{
 		"Index":                      committed.Body.Index,
-		"Hash":                       committed.Body.Hash.Hex(),
+		"TopBlockHash":               committed.Body.Hash.Hex(),
 		"ClaimsCount":                committed.Body.Claims.Count(),
 		"TSLsCount":                  committed.Body.TSLs.Count(),
 		"SignaturesCount":            committed.Signatures.Count(),

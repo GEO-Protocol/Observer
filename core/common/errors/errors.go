@@ -5,22 +5,45 @@ import (
 	"runtime/debug"
 )
 
-type StackTraceError interface {
+type E interface {
 	Error() error
 	StackTrace() string
+	IsFatal() bool
 }
 
 type StackTrace struct {
 	err   error
 	trace []byte
+	fatal bool
 }
 
-func WithStackTrace(e error) (err StackTraceError) {
+func New(message string) (err E) {
+	err = &StackTrace{
+		err:   errors.New(message),
+		trace: debug.Stack(),
+	}
+	return
+}
+
+func Fatal(message string) (err E) {
+	err = &StackTrace{
+		err:   errors.New(message),
+		trace: debug.Stack(),
+		fatal: true,
+	}
+	return
+}
+
+func AppendStackTrace(e error) (err E) {
 	err = &StackTrace{
 		err:   e,
 		trace: debug.Stack(),
 	}
 	return
+}
+
+func (e *StackTrace) IsFatal() bool {
+	return e.fatal
 }
 
 func (e *StackTrace) Error() error {
@@ -45,15 +68,21 @@ func SendErrorIfAny(err error, errors chan error) {
 }
 
 var (
+	// Configuration
+	InvalidObserverIndex = errors.New("invalid observer index")
+
 	// Common
 	SuspiciousOperation = errors.New("suspicious operation")
 	ExpectationFailed   = errors.New("expecteation failed")
+	NoConsensus         = errors.New("no consensus")
+	ValidationFailed    = errors.New("validation failed")
 
 	// Memory error
 	InvalidCopyOperation     = errors.New("invalid copy operation")
 	MaxCountReached          = errors.New("max elements count has been reached")
 	NilInternalDataStructure = errors.New("attempt to reach nil object")
 	NilParameter             = errors.New("nil parameter occurred")
+	InvalidParameter         = errors.New("invalid parameter")
 
 	// Channels
 	ChannelTransferringFailed = errors.New("attempt to send info to the channel failed")
@@ -74,6 +103,7 @@ var (
 
 	// chain
 	InvalidBlockHeight = errors.New("invalid block height")
+	InvalidChainHeight = errors.New("invalid chain height")
 
 	// Blocks Producer
 	AttemptToGenerateRedundantBlock    = errors.New("attempt to generate redundant block proposal")
@@ -86,4 +116,10 @@ var (
 
 	// GEO Nodes receiver
 	HashIntegrityCheckFailed = errors.New("hash integrity check failed")
+)
+
+var (
+	// Composer
+	NoResponseReceived = errors.New("no ChainTop response received")
+	SyncFailed         = errors.New("sync failed")
 )

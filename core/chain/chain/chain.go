@@ -4,12 +4,19 @@ import (
 	"geo-observers-blockchain/core/chain/block"
 	"geo-observers-blockchain/core/chain/signatures"
 	"geo-observers-blockchain/core/common"
+	"geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/geo"
 	"geo-observers-blockchain/core/storage"
 	"geo-observers-blockchain/core/utils"
 )
 
+const (
+	DataPath     = "data/"
+	DataFilePath = DataPath + "chain.dat"
+)
+
 var (
+	// todo: move it to the common errors
 	ErrBlocksCollision = utils.Error("chain", "blocks collision")
 )
 
@@ -19,8 +26,8 @@ type Chain struct {
 	storage *storage.AppendOnlyStorage
 }
 
-func NewChain() (chain *Chain, err error) {
-	storageHandler, err := storage.Open("data/chain.dat")
+func NewChain(datFilePath string) (chain *Chain, err error) {
+	storageHandler, err := storage.Open(datFilePath)
 	if err != nil {
 		return
 	}
@@ -55,7 +62,7 @@ func (chain *Chain) Append(bs *block.Signed) (err error) {
 	return chain.storage.Append(data[:])
 }
 
-func (chain *Chain) At(index uint64) (b *block.Signed, err error) {
+func (chain *Chain) BlockAt(index uint64) (b *block.Signed, err error) {
 	data, err := chain.storage.Get(index)
 	if err != nil {
 		return
@@ -70,31 +77,41 @@ func (chain *Chain) At(index uint64) (b *block.Signed, err error) {
 	return
 }
 
-func (chain *Chain) ensureGenesisBlockPresence() (err error) {
-	if chain.Height() == 0 {
-		b := &block.Signed{
-			Body: &block.Body{
-				Index:               0,
-				ExternalChainHeight: 0,
-				AuthorObserverIndex: 0,
-				Claims:              &geo.Claims{},
-				TSLs:                &geo.TransactionSignaturesLists{},
-			},
-			Signatures: signatures.NewIndexedObserversSignatures(common.ObserversMaxCount),
-		}
+// LastBlock returns highest block of the chain.
+// todo: tests needed.
+func (chain *Chain) LastBlock() (b *block.Signed, e errors.E) {
+	topIndex := chain.Height() - 1
+	if topIndex < 0 {
+		e = errors.AppendStackTrace(errors.InvalidChainHeight)
+		return
+	}
 
-		err = chain.Append(b)
+	b, err := chain.BlockAt(topIndex)
+	if err != nil {
+		e = errors.AppendStackTrace(err)
+		return
 	}
 
 	return
 }
 
-//
-//func (chain *Chain) resetLastBlockTimestamp() {
-//	if chain.Index() == 0 {
-//		chain.LastBlockTimestamp = time.Now()
-//
-//	} else {
-//		// todo: read from last block
-//	}
-//}
+func (chain *Chain) GenerateGenesisBlock() (b *block.Signed) {
+	return &block.Signed{
+		Body: &block.Body{
+			Index:               0,
+			ExternalChainHeight: 0,
+			AuthorObserverIndex: 0,
+			Claims:              &geo.Claims{},
+			TSLs:                &geo.TransactionSignaturesLists{},
+		},
+		Signatures: signatures.NewIndexedObserversSignatures(common.ObserversMaxCount),
+	}
+}
+
+func (chain *Chain) ensureGenesisBlockPresence() (err error) {
+	if chain.Height() == 0 {
+		err = chain.Append(
+			chain.GenerateGenesisBlock())
+	}
+	return
+}

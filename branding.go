@@ -23,6 +23,6 @@ func PrintVersionDigest() {
 	println(
 		"\n",
 		"Buildstamp:", BuildTimestamp, "\n",
-		"  Git Hash:", GitHash, "\n",
+		"  Git TopBlockHash:", GitHash, "\n",
 		"\n\n")
 }

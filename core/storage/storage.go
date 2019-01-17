@@ -22,6 +22,7 @@ const (
 )
 
 // todo: tests needed
+// todo: add protocol versing for ability to migrate it in future
 type AppendOnlyStorage struct {
 	file         *os.File
 	isActive     bool
@@ -33,6 +34,15 @@ type AppendOnlyStorage struct {
 	index map[uint64]int64
 }
 
+//
+// WARN:
+// This method must NOT create directories hierarchy, in case if path contains directories.
+// It is expected, that data file(s) would live on the separate btrfs (important!) block device,
+// and would be mounted into the observer's working directory.
+// In case if there is no destination directory - filesystem configuration seems to be broken,
+// and no attempt to use (or fix) should be done.
+//
+// todo: cover reject of directories hierarchy creation.
 func Open(filename string) (*AppendOnlyStorage, error) {
 	storage := &AppendOnlyStorage{}
 

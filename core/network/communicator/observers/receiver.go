@@ -237,6 +237,12 @@ func (r *Receiver) parseAndRouteData(data []byte) (err error) {
 	case constants.DataTypeRequestBlockSignaturesBroadcast:
 		return processRequest(&requests.BlockSignaturesBroadcast{})
 
+	case constants.DataTypeRequestChainTop:
+		return processRequest(&requests.ChainTop{})
+
+	case constants.DataTypeResponseChainTop:
+		return processResponse(&responses.ChainTop{}, nil)
+
 	default:
 		return errors.UnexpectedDataType
 	}

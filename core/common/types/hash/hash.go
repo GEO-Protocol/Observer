@@ -1,6 +1,7 @@
 package hash
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"geo-observers-blockchain/core/common/errors"
@@ -23,6 +24,10 @@ func NewSHA256Container(data []byte) SHA256Container {
 	return SHA256Container{
 		Bytes: sha256.Sum256(data),
 	}
+}
+
+func (h *SHA256Container) Compare(other *SHA256Container) bool {
+	return bytes.Compare(other.Bytes[:], h.Bytes[:]) == 0
 }
 
 func (h *SHA256Container) MarshalBinary() (data []byte, err error) {
