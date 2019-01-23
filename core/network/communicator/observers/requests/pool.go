@@ -28,10 +28,10 @@ func (r *PoolInstanceBroadcast) MarshalBinary() (data []byte, err error) {
 	)
 
 	switch r.Instance.(type) {
-	case *geo.TransactionSignaturesList:
+	case *geo.TSL:
 		{
 			streamType = constants.StreamTypeRequestTSLBroadcast
-			instanceData, err = r.Instance.(*geo.TransactionSignaturesList).MarshalBinary()
+			instanceData, err = r.Instance.(*geo.TSL).MarshalBinary()
 		}
 
 	case *geo.Claim:
@@ -66,8 +66,8 @@ func (r *PoolInstanceBroadcast) UnmarshalBinary(data []byte) (err error) {
 	switch data[0] {
 	case constants.DataTypeRequestTSLBroadcast:
 		{
-			r.Instance = geo.NewTransactionSignaturesList()
-			err = r.Instance.(*geo.TransactionSignaturesList).UnmarshalBinary(data[3:])
+			r.Instance = geo.NewTSL()
+			err = r.Instance.(*geo.TSL).UnmarshalBinary(data[3:])
 		}
 
 	case constants.DataTypeRequestClaimBroadcast:

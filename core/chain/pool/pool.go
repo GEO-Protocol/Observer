@@ -74,6 +74,9 @@ func (pool *Pool) Add(instance instance) (record *Record, err error) {
 		// It must not be replaced by the new value, to prevent votes dropping.
 		err = errors.Collision
 		return
+
+	} else {
+		err = nil
 	}
 
 	record = &Record{

@@ -1,4 +1,3 @@
-import hashlib
 import socket
 import array
 import struct
@@ -7,33 +6,32 @@ from uuid import uuid4
 
 import settings
 
-SIGNATURE_SIZE = 1024 * 8
-SIGNATURES_COUNT = 12
 
-DATA_TYPE_HEADER = 64
+MEMBER_SIZE = (1024 * 8) + 2
+MEMBERS_COUNT = 3
 
 
-class TSLSendingTest(TestCase):
+class TSLAttemptTest(TestCase):
     @staticmethod
     def generate_tsl():
         uuid = array.array('B', uuid4().bytes)
-        signatures = array.array('B', [0] * SIGNATURE_SIZE * SIGNATURES_COUNT)
+        members = array.array('B', [0] * MEMBER_SIZE * MEMBERS_COUNT)
+        return uuid + array.array('B', struct.pack("H", MEMBERS_COUNT)) + members
 
-        data = uuid + array.array('B', struct.pack("H", SIGNATURES_COUNT)) + signatures
-        h = hashlib.blake2b(digest_size=32)
-        h.update(data)
+    def setUp(self):
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.connect((settings.OBSERVER_HOST, settings.OBSERVER_PORT))
 
-        return data + array.array('B', h.digest())
+    def tearDown(self):
+        self.sock.close()
 
-    def test_sending(self):
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.connect((settings.OBSERVER_HOST, settings.OBSERVER_PORT))
+    def send_tsl(self, message):
+        self.sock.send(struct.pack("L", len(message) + 2))
+        self.sock.send(struct.pack("B", 0))
+        self.sock.send(struct.pack("B", 64))
+        self.sock.send(message)
 
-        message = self.generate_tsl()
-        s.send(struct.pack("LB", len(message), DATA_TYPE_HEADER))
-        s.send(message)
+    def test_valid_tsl(self):
+        self.send_tsl(self.generate_tsl())
 
-        response = s.recv(1)
-        self.assertEqual(response, b'\x00')
-
-        s.close()
+        # todo: check pool

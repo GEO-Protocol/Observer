@@ -16,6 +16,7 @@ import (
 var (
 	// Specifies how often pool will try to broadcast
 	// its items to the external observers.
+	// todo: move to constants
 	kTimeoutItemsSynchronisation = time.Duration(time.Second * 2)
 )
 
@@ -175,6 +176,7 @@ func (h *Handler) processNewInstance(i instance, conf *external.Configuration) (
 	// sync it's items with the rest observers ASAP.
 	h.hasUnapprovedItems = true
 
+	h.log().WithField("PoolSize", len(h.pool.index)).Debug("Instance added")
 	return h.requestRecordBroadcast(record)
 }
 
@@ -352,5 +354,5 @@ func (h *Handler) dropItemsByHashes(event *EventItemsDroppingRequest) {
 }
 
 func (h *Handler) log() *log.Entry {
-	return log.WithFields(log.Fields{"prefix": "Pool Handler"})
+	return log.WithFields(log.Fields{"prefix": "Pool"})
 }

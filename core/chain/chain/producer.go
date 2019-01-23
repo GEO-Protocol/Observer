@@ -11,6 +11,8 @@ import (
 	"geo-observers-blockchain/core/common/types/hash"
 	"geo-observers-blockchain/core/crypto/keystore"
 	"geo-observers-blockchain/core/geo"
+	geoRequests "geo-observers-blockchain/core/network/communicator/geo/api/v0/requests"
+	geoResponses "geo-observers-blockchain/core/network/communicator/geo/api/v0/responses"
 	"geo-observers-blockchain/core/network/communicator/observers/requests"
 	"geo-observers-blockchain/core/network/communicator/observers/responses"
 	"geo-observers-blockchain/core/network/external"
@@ -32,6 +34,7 @@ import (
 
 // Producer generates new blocks and validates info received from remote observers.
 type Producer struct {
+	// Observers interface
 	OutgoingRequestsCandidateDigestBroadcast chan *requests.CandidateDigestBroadcast
 	IncomingRequestsCandidateDigest          chan *requests.CandidateDigestBroadcast
 	OutgoingResponsesCandidateDigestApprove  chan *responses.CandidateDigestApprove
@@ -41,6 +44,10 @@ type Producer struct {
 	IncomingRequestsChainTop                 chan *requests.ChainTop
 	OutgoingResponsesChainTop                chan *responses.ChainTop
 
+	// GEO Node interface
+	IncomingRequestsLastBlockHeight chan *geoRequests.LastBlockHeight
+
+	// Internal interface
 	IncomingEventTimeFrameEnded chan *ticker.EventTimeFrameEnd
 
 	settings   *settings.Settings
@@ -56,46 +63,36 @@ type Producer struct {
 
 func NewProducer(
 	conf *settings.Settings, reporter *external.Reporter,
-	keystore *keystore.KeyStore, composer *Composer) (producer *Producer, err error) {
+	keystore *keystore.KeyStore, poolTSLs, poolClaims *pool.Handler, composer *Composer) (producer *Producer, err error) {
 
 	producer = &Producer{
-		OutgoingRequestsCandidateDigestBroadcast: make(
-			chan *requests.CandidateDigestBroadcast, 1),
+		// Observers interface
+		OutgoingRequestsCandidateDigestBroadcast: make(chan *requests.CandidateDigestBroadcast, 1),
+		IncomingRequestsCandidateDigest:          make(chan *requests.CandidateDigestBroadcast, common.ObserversMaxCount-1),
+		OutgoingResponsesCandidateDigestApprove:  make(chan *responses.CandidateDigestApprove, 1),
+		IncomingResponsesCandidateDigestApprove:  make(chan *responses.CandidateDigestApprove, common.ObserversMaxCount-1),
+		OutgoingRequestsBlockSignaturesBroadcast: make(chan *requests.BlockSignaturesBroadcast, 1),
+		IncomingRequestsBlockSignatures:          make(chan *requests.BlockSignaturesBroadcast, 1),
+		IncomingRequestsChainTop:                 make(chan *requests.ChainTop, 1),
+		OutgoingResponsesChainTop:                make(chan *responses.ChainTop, 1),
 
-		IncomingRequestsCandidateDigest: make(
-			chan *requests.CandidateDigestBroadcast, common.ObserversMaxCount-1),
+		// GEO Node interface
+		IncomingRequestsLastBlockHeight: make(chan *geoRequests.LastBlockHeight, 1),
 
-		OutgoingResponsesCandidateDigestApprove: make(
-			chan *responses.CandidateDigestApprove, 1),
-
-		IncomingResponsesCandidateDigestApprove: make(
-			chan *responses.CandidateDigestApprove, common.ObserversMaxCount-1),
-
-		OutgoingRequestsBlockSignaturesBroadcast: make(
-			chan *requests.BlockSignaturesBroadcast, 1),
-
-		IncomingRequestsBlockSignatures: make(
-			chan *requests.BlockSignaturesBroadcast, 1),
-
-		IncomingRequestsChainTop:  make(chan *requests.ChainTop, 1),
-		OutgoingResponsesChainTop: make(chan *responses.ChainTop, 1),
-
+		// Internal interface
 		IncomingEventTimeFrameEnded: make(chan *ticker.EventTimeFrameEnd, 1),
 
-		settings: conf,
-		reporter: reporter,
-		keystore: keystore,
-		poolTSLs: pool.NewHandler(reporter),
-		composer: composer,
-
-		poolClaims: pool.NewHandler(reporter),
+		settings:   conf,
+		reporter:   reporter,
+		keystore:   keystore,
+		poolTSLs:   poolTSLs,
+		poolClaims: poolClaims,
+		composer:   composer,
 	}
 	return
 }
 
 func (p *Producer) Run(globalErrorsFlow chan<- error) {
-	go p.poolClaims.Run(globalErrorsFlow)
-	go p.poolTSLs.Run(globalErrorsFlow)
 	go p.composer.Run(globalErrorsFlow)
 
 	conf, err := p.reporter.GetCurrentConfiguration()
@@ -123,6 +120,9 @@ func (p *Producer) Run(globalErrorsFlow chan<- error) {
 		panic(err)
 	}
 
+	go p.poolClaims.Run(globalErrorsFlow)
+	go p.poolTSLs.Run(globalErrorsFlow)
+
 	for {
 		select {
 		// todo: add case when observers configuration has changed
@@ -134,6 +134,10 @@ func (p *Producer) Run(globalErrorsFlow chan<- error) {
 		case incomingRequestChainTop := <-p.IncomingRequestsChainTop:
 			p.handleErrorIfAny(
 				p.processChainTopRequest(incomingRequestChainTop, conf))
+
+		case incomingRequestLastBlockHeight := <-p.IncomingRequestsLastBlockHeight:
+			p.handleErrorIfAny(p.processGEOLastBlockHeightRequest(
+				incomingRequestLastBlockHeight))
 		}
 	}
 }
@@ -304,16 +308,16 @@ func (p *Producer) generateBlockCandidateFromPool(
 	conf *external.Configuration) (candidate *block.Body, err error) {
 
 	// todo: move to separate method
-	getBlockReadyTSLs := func() (tsls *geo.TransactionSignaturesLists, err error) {
+	getBlockReadyTSLs := func() (tsls *geo.TSLs, err error) {
 		channel, errorsChannel := p.poolTSLs.BlockReadyInstances()
 
-		tsls = &geo.TransactionSignaturesLists{}
-		tsls.At = make([]*geo.TransactionSignaturesList, 0, 0) // todo: create constructor for it
+		tsls = &geo.TSLs{}
+		tsls.At = make([]*geo.TSL, 0, 0) // todo: create constructor for it
 
 		select {
 		case i := <-channel:
 			for _, instance := range i.At {
-				tsls.At = append(tsls.At, instance.(*geo.TransactionSignaturesList))
+				tsls.At = append(tsls.At, instance.(*geo.TSL))
 			}
 
 		case _ = <-errorsChannel:
@@ -328,7 +332,7 @@ func (p *Producer) generateBlockCandidateFromPool(
 
 	// todo: move to separate method
 	getBlockReadyClaims := func() (claims *geo.Claims, err error) {
-		channel, errorsChannel := p.poolTSLs.BlockReadyInstances()
+		channel, errorsChannel := p.poolClaims.BlockReadyInstances()
 
 		claims = &geo.Claims{}
 		claims.At = make([]*geo.Claim, 0, 0)
@@ -340,7 +344,7 @@ func (p *Producer) generateBlockCandidateFromPool(
 			}
 
 		case _ = <-errorsChannel:
-			err = errors.TSLsPoolReadFailed
+			err = errors.ClaimsPoolReadFailed
 
 		case <-time.After(time.Second):
 			err = errors.ClaimsPoolReadFailed
@@ -367,14 +371,14 @@ func (p *Producer) generateBlockCandidateFromDigest(
 	digest *block.Digest, conf *external.Configuration) (candidate *block.Body, err error) {
 
 	// todo: move to separate method
-	getBlockReadyTSLs := func() (tsls *geo.TransactionSignaturesLists, err error) {
+	getBlockReadyTSLs := func() (tsls *geo.TSLs, err error) {
 		channel, errorsChannel := p.poolTSLs.BlockReadyInstancesByHashes(digest.TSLsHashes.At)
 
-		tsls = &geo.TransactionSignaturesLists{}
+		tsls = &geo.TSLs{}
 		select {
 		case i := <-channel:
 			for _, instance := range i.At {
-				tsls.At = append(tsls.At, instance.(*geo.TransactionSignaturesList))
+				tsls.At = append(tsls.At, instance.(*geo.TSL))
 			}
 
 		case _ = <-errorsChannel:
@@ -422,7 +426,7 @@ func (p *Producer) generateBlockCandidateFromDigest(
 }
 
 func (p *Producer) generateBlockCandidate(
-	tsls *geo.TransactionSignaturesLists, claims *geo.Claims,
+	tsls *geo.TSLs, claims *geo.Claims,
 	conf *external.Configuration,
 	authorObserverPosition uint16) (candidate *block.Body, err error) {
 
@@ -826,6 +830,13 @@ func (p *Producer) commitBlock(tick *ticker.EventTimeFrameEnd) (err error) {
 
 func (p *Producer) hasProposedBlock() bool {
 	return p.nextBlock != nil
+}
+
+func (p *Producer) processGEOLastBlockHeightRequest(req *geoRequests.LastBlockHeight) (err error) {
+	req.ResponseChannel() <- &geoResponses.LastBlockHeight{
+		Height: p.chain.Height(),
+	}
+	return
 }
 
 func (p *Producer) handleErrorIfAny(err error) {

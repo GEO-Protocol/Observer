@@ -16,7 +16,7 @@ func MarshalUint16(u uint16) []byte {
 }
 
 func UnmarshalUint16(data []byte) (u uint16, err error) {
-	if len(data) != 2 {
+	if len(data) < 2 {
 		err = ErrInvalidData
 		return
 	}

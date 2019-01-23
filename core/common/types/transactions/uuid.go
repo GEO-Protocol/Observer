@@ -20,9 +20,7 @@ func (u *TransactionUUID) MarshalBinary() (data []byte, err error) {
 func (u *TransactionUUID) UnmarshalBinary(data []byte) error {
 	if copy(u.Bytes[:], data[:common.TransactionUUIDSize]) == common.TransactionUUIDSize {
 		return nil
-
-	} else {
-		return errors.InvalidCopyOperation
-
 	}
+
+	return errors.InvalidDataFormat
 }

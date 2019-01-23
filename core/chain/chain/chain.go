@@ -102,7 +102,7 @@ func (chain *Chain) GenerateGenesisBlock() (b *block.Signed) {
 			ExternalChainHeight: 0,
 			AuthorObserverIndex: 0,
 			Claims:              &geo.Claims{},
-			TSLs:                &geo.TransactionSignaturesLists{},
+			TSLs:                &geo.TSLs{},
 		},
 		Signatures: signatures.NewIndexedObserversSignatures(common.ObserversMaxCount),
 	}

@@ -14,7 +14,7 @@ const (
 
 type Receiver struct {
 	Claims          chan<- geo.Claim
-	TSLs            chan<- geo.TransactionSignaturesList
+	TSLs            chan<- geo.TSL
 	BlockSignatures chan<- chain.BlockSignatures
 	BlocksProposed  chan<- chain.ProposedBlockData
 	BlockCandidates chan<- chain.BlockSigned
@@ -30,7 +30,7 @@ type Communicator struct {
 func NewCommunicator() *Communicator {
 	return &Communicator{
 		Claims:          make(chan<- geo.Claim, ChannelBufferSize),
-		TSLs:            make(chan<- geo.TransactionSignaturesList, ChannelBufferSize),
+		TSLs:            make(chan<- geo.TSL, ChannelBufferSize),
 		BlockSignatures: make(chan<- chain.BlockSignatures, ChannelBufferSize),
 		BlocksProposed:  make(chan<- chain.ProposedBlockData, ChannelBufferSize),
 		BlockCandidates: make(chan<- chain.BlockSigned, ChannelBufferSize),

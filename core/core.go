@@ -6,6 +6,7 @@ import (
 	"geo-observers-blockchain/core/crypto/keystore"
 	"geo-observers-blockchain/core/geo"
 	geoNet "geo-observers-blockchain/core/network/communicator/geo"
+	geoRequests "geo-observers-blockchain/core/network/communicator/geo/api/v0/requests"
 	observersNet "geo-observers-blockchain/core/network/communicator/observers"
 	"geo-observers-blockchain/core/network/communicator/observers/requests"
 	"geo-observers-blockchain/core/network/communicator/observers/responses"
@@ -39,8 +40,10 @@ func New(conf *settings.Settings) (core *Core, err error) {
 	}
 
 	reporter := external.NewReporter(conf, k)
+	poolTSLs := pool.NewHandler(reporter)
+	poolClaims := pool.NewHandler(reporter)
 	composer := chain.NewComposer(reporter, conf)
-	producer, err := chain.NewProducer(conf, reporter, k, composer)
+	producer, err := chain.NewProducer(conf, reporter, k, poolTSLs, poolClaims, composer)
 
 	core = &Core{
 		settings:              conf,
@@ -50,8 +53,8 @@ func New(conf *settings.Settings) (core *Core, err error) {
 		senderObservers:       observersNet.NewSender(conf, reporter),
 		receiverObservers:     observersNet.NewReceiver(),
 		receiverGEONodes:      geoNet.NewReceiver(),
-		poolClaims:            pool.NewHandler(reporter),
-		poolTSLs:              pool.NewHandler(reporter),
+		poolClaims:            poolClaims,
+		poolTSLs:              poolTSLs,
 		blocksProducer:        producer,
 		composer:              composer,
 	}
@@ -108,8 +111,6 @@ func (c *Core) initNetwork(errors chan error) {
 
 func (c *Core) initProcessing(globalErrorsFlow chan error) {
 	go c.timer.Run(globalErrorsFlow)
-	go c.poolClaims.Run(globalErrorsFlow)
-	go c.poolTSLs.Run(globalErrorsFlow)
 	go c.blocksProducer.Run(globalErrorsFlow)
 
 	go c.dispatchDataFlows(globalErrorsFlow)
@@ -181,21 +182,6 @@ func (c *Core) dispatchDataFlows(globalErrorsFlow chan error) {
 				processTransferringFail(outgoingResponseChainTop, c.senderObservers)
 			}
 
-		// GEO Nodes Receiver
-		case incomingTSL := <-c.receiverGEONodes.IncomingTSLs:
-			select {
-			case c.poolTSLs.IncomingInstances <- incomingTSL:
-			default:
-				processTransferringFail(incomingTSL, c.poolTSLs)
-			}
-
-		case incomingClaim := <-c.receiverGEONodes.IncomingClaims:
-			select {
-			case c.poolClaims.IncomingInstances <- incomingClaim:
-			default:
-				processTransferringFail(incomingClaim, c.poolClaims)
-			}
-
 		// Ticker
 		case outgoingRequestTimeFrames := <-c.timer.OutgoingRequestsTimeFrames:
 			select {
@@ -242,7 +228,7 @@ func (c *Core) dispatchDataFlows(globalErrorsFlow chan error) {
 				processTransferringFail(outgoingResponseTSLApprove, c.senderObservers)
 			}
 
-		// Incoming requests and responses processing
+		// Observers incoming requests and responses processing
 		case incomingRequest := <-c.receiverObservers.Requests:
 			err := c.processIncomingRequest(incomingRequest)
 			if err != nil {
@@ -251,6 +237,13 @@ func (c *Core) dispatchDataFlows(globalErrorsFlow chan error) {
 
 		case incomingResponse := <-c.receiverObservers.Responses:
 			err := c.processIncomingResponse(incomingResponse)
+			if err != nil {
+				processError(err)
+			}
+
+		// GEO Node requests processing
+		case geoNodeRequest := <-c.receiverGEONodes.Requests:
+			err := c.processIncomingGEONodeRequest(geoNodeRequest)
 			if err != nil {
 				processError(err)
 			}
@@ -277,7 +270,7 @@ func (c *Core) processIncomingRequest(r requests.Request) (err error) {
 
 	case *requests.PoolInstanceBroadcast:
 		switch r.(*requests.PoolInstanceBroadcast).Instance.(type) {
-		case *geo.TransactionSignaturesList:
+		case *geo.TSL:
 			select {
 			case c.poolTSLs.IncomingRequestsInstanceBroadcast <- r.(*requests.PoolInstanceBroadcast):
 			default:
@@ -314,6 +307,44 @@ func (c *Core) processIncomingRequest(r requests.Request) (err error) {
 		case c.blocksProducer.IncomingRequestsChainTop <- r.(*requests.ChainTop):
 		default:
 			processTransferringFail(r, c.blocksProducer)
+		}
+
+	default:
+		err = utils.Error("core", "unexpected request type occurred")
+	}
+
+	return
+}
+
+func (c *Core) processIncomingGEONodeRequest(r geoRequests.Request) (err error) {
+	processTransferringFail := func(instance, processor interface{}) {
+		err = utils.Error("core",
+			reflect.TypeOf(instance).String()+
+				" wasn't sent to "+
+				reflect.TypeOf(processor).String()+
+				" due to channel transferring delay/error")
+	}
+
+	switch r.(type) {
+	case *geoRequests.LastBlockHeight:
+		select {
+		case c.blocksProducer.IncomingRequestsLastBlockHeight <- r.(*geoRequests.LastBlockHeight):
+		default:
+			processTransferringFail(r, c.poolTSLs)
+		}
+
+	case *geoRequests.TSLAppend:
+		select {
+		case c.poolTSLs.IncomingInstances <- r.(*geoRequests.TSLAppend).TSL:
+		default:
+			processTransferringFail(r, c.poolTSLs)
+		}
+
+	case *geoRequests.ClaimAppend:
+		select {
+		case c.poolClaims.IncomingInstances <- r.(*geoRequests.ClaimAppend).Claim:
+		default:
+			processTransferringFail(r, c.poolTSLs)
 		}
 
 	default:

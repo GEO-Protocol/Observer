@@ -2,34 +2,25 @@ package geo
 
 import (
 	"bufio"
-	"bytes"
+	"encoding"
 	"fmt"
 	"geo-observers-blockchain/core/common"
 	"geo-observers-blockchain/core/common/errors"
-	"geo-observers-blockchain/core/geo"
+	"geo-observers-blockchain/core/network/communicator/geo/api/v0"
+	"geo-observers-blockchain/core/network/communicator/geo/api/v0/requests"
 	"geo-observers-blockchain/core/utils"
 	log "github.com/sirupsen/logrus"
-	"golang.org/x/crypto/blake2b"
 	"net"
-)
-
-const (
-	// Traffic status codes
-	TransferStatusOK    = 0
-	TransferStatusError = 1
+	"time"
 )
 
 type Receiver struct {
-	IncomingClaims chan *geo.Claim
-	IncomingTSLs   chan *geo.TransactionSignaturesList
+	Requests chan requests.Request
 }
 
 func NewReceiver() *Receiver {
-	const channelBufferSize = 1
-
 	return &Receiver{
-		IncomingClaims: make(chan *geo.Claim, channelBufferSize),
-		IncomingTSLs:   make(chan *geo.TransactionSignaturesList, channelBufferSize),
+		Requests: make(chan requests.Request, 256),
 	}
 }
 
@@ -64,131 +55,124 @@ func (r *Receiver) Run(host string, port uint16, errors chan<- error) {
 }
 
 func (r *Receiver) handleConnection(conn net.Conn, globalErrorsFlow chan<- error) {
-	defer conn.Close()
-
-	handleTransferError := func(err error) {
-		_, _ = conn.Write([]byte{TransferStatusError})
-		r.logEgress(1, conn)
-		globalErrorsFlow <- err
+	processError := func(err errors.E) {
+		conn.Close()
 	}
 
-	handleTransferSuccess := func() {
-		_, _ = conn.Write([]byte{TransferStatusOK})
-		r.logEgress(1, conn)
-	}
-
-	reader := bufio.NewReader(conn)
-
-	message, err := r.receiveData(reader)
+	message, err := r.receiveData(conn)
 	if err != nil {
-		handleTransferError(err)
-		return
-	}
-	r.logIngress(len(message), conn)
-
-	hash := message[:blake2b.Size256]
-	data := message[blake2b.Size256:]
-	if r.checkIntegrity(hash, data) {
-		handleTransferError(errors.HashIntegrityCheckFailed)
+		processError(err)
 		return
 	}
 
-	err = r.parseAndRouteData(message)
-	if err != nil {
-		handleTransferError(err)
+	request, e := v0.ParseRequest(message)
+	if e != nil {
+		processError(e)
 		return
 	}
 
-	handleTransferSuccess()
+	go r.handleRequest(conn, request, globalErrorsFlow)
 }
 
-func (r *Receiver) receiveData(reader *bufio.Reader) (data []byte, err error) {
-	packageSizeMarshaled := make([]byte, common.Uint32ByteSize, common.Uint32ByteSize)
-	bytesRead, err := reader.Read(packageSizeMarshaled)
-	if err != nil {
+func (r *Receiver) handleRequest(conn net.Conn, request requests.Request, globalErrorsFlow chan<- error) {
+	defer conn.Close()
+
+	select {
+	case r.Requests <- request:
+		r.handleResponseIfAny(conn, request, globalErrorsFlow)
+
+	default:
+		globalErrorsFlow <- errors.ChannelTransferringFailed
+	}
+}
+
+func (r *Receiver) handleResponseIfAny(conn net.Conn, request requests.Request, globalErrorsFlow chan<- error) {
+	processResponseSending := func(response encoding.BinaryMarshaler) {
+		binaryData, err := response.MarshalBinary()
+		if err != nil {
+			globalErrorsFlow <- err
+			return
+		}
+
+		e := r.sendData(conn, binaryData)
+		if e != nil {
+			globalErrorsFlow <- e.Error()
+			return
+		}
+	}
+
+	if request.ResponseChannel() == nil {
+		// Request does not assumes any response.
 		return
 	}
+
+	select {
+	case response := <-request.ResponseChannel():
+		processResponseSending(response)
+
+	case <-time.After(time.Second * 2):
+		globalErrorsFlow <- errors.NoResponseReceived
+	}
+}
+
+func (r *Receiver) receiveData(conn net.Conn) (data []byte, e errors.E) {
+	reader := bufio.NewReader(conn)
+
+	messageSizeBinary := []byte{0, 0, 0, 0}
+	bytesRead, err := reader.Read(messageSizeBinary)
+	if err != nil {
+		e = errors.AppendStackTrace(err)
+		return
+	}
+
 	if bytesRead != common.Uint32ByteSize {
-		return nil, errors.BufferDiscarding
-	}
-
-	messageSize, err := utils.UnmarshalUint32(packageSizeMarshaled)
-	if err != nil {
+		e = errors.AppendStackTrace(errors.InvalidDataFormat)
 		return
 	}
 
+	messageSize, err := utils.UnmarshalUint32(messageSizeBinary)
+	if err != nil {
+		e = errors.AppendStackTrace(errors.InvalidDataFormat)
+		return
+	}
+
+	_, _ = reader.Discard(4)
 	var offset uint32 = 0
 	data = make([]byte, messageSize, messageSize)
 	for {
 		bytesReceived, err := reader.Read(data[offset:])
 		if err != nil {
-			return nil, err
+			return nil, errors.AppendStackTrace(err)
 		}
 
 		offset += uint32(bytesReceived)
 		if offset == messageSize {
-			return data[common.Uint32ByteSize:], nil
+			r.logIngress(len(data), conn)
+			return data, nil
 		}
 	}
 }
 
-func (r *Receiver) parseAndRouteData(data []byte) (err error) {
-	reader := bytes.NewReader(data)
-	dataTypeHeader, err := reader.ReadByte()
-	if err != nil {
-		return
-	}
+func (r *Receiver) sendData(conn net.Conn, data []byte) (e errors.E) {
+	dataSize := len(data)
+	dataSizeBinary := utils.MarshalUint64(uint64(dataSize))
+	data = append(dataSizeBinary, data...)
 
-	switch uint8(dataTypeHeader) {
-	case DataTypeTransactionsSignaturesList:
-		{
-			tsl := &geo.TransactionSignaturesList{}
-			err = tsl.UnmarshalBinary(data[1:])
-			if err != nil {
-				return
-			}
-
-			select {
-			case r.IncomingTSLs <- tsl:
-				{
-					return
-				}
-
-			default:
-				return errors.ChannelTransferringFailed
-			}
+	totalBytesSent := 0
+	for {
+		if totalBytesSent == len(data) {
+			break
 		}
 
-	case DataTypeClaim:
-		{
-			claim := &geo.Claim{}
-			err = claim.UnmarshalBinary(data[1:])
-			if err != nil {
-				return
-			}
-
-			select {
-			case r.IncomingClaims <- claim:
-				{
-					return
-				}
-
-			default:
-				return errors.ChannelTransferringFailed
-			}
+		bytesWritten, err := conn.Write(data[totalBytesSent:])
+		if err != nil {
+			return errors.AppendStackTrace(err)
 		}
 
-	default:
-		return errors.UnexpectedDataType
+		totalBytesSent += bytesWritten
 	}
-}
 
-// todo: fix blake2b AVX/AVX2 usage.
-//       At this moment, (golang 1.11) internal x/blake2b library patching is needed.
-//       More details: https://github.com/golang/go/issues/25098
-func (r *Receiver) checkIntegrity(hash, data []byte) bool {
-	h := blake2b.Sum256(data)
-	return bytes.Compare(hash, h[:]) == 0
+	return
 }
 
 func (r *Receiver) logIngress(bytesReceived int, conn net.Conn) {
