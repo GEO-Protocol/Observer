@@ -2,16 +2,24 @@ package geo
 
 import (
 	"fmt"
-	"geo-observers-blockchain/core/common"
-	"geo-observers-blockchain/core/utils"
+	"geo-observers-blockchain/core/network/communicator/geo/api/v0/common"
+	"geo-observers-blockchain/core/network/communicator/geo/api/v0/requests"
+	"geo-observers-blockchain/core/network/communicator/geo/api/v0/responses"
 	"geo-observers-blockchain/tests"
 	"os"
 	"testing"
 )
 
 const (
-	LastBlockHeightRequestID = 32
+	LastBlockNumberRequestID = 32
 )
+
+func TestLastBlockNumberRequestID(t *testing.T) {
+	if //noinspection GoBoolExpressions
+	LastBlockNumberRequestID != common.ReqChainLastBlockNumber {
+		t.Fatal()
+	}
+}
 
 func TestMain(m *testing.M) {
 	err := tests.LaunchTestObserver()
@@ -35,21 +43,19 @@ func TestLastBlockHeight(t *testing.T) {
 	conn := connectToObserver(t)
 	defer conn.Close()
 
-	sendData(t, conn, []byte{LastBlockHeightRequestID})
-	response := getResponse(t, conn)
+	request := &requests.LastBlockNumber{}
+	sendRequest(t, request, conn)
 
-	const totalExpectedResponseLength = common.Uint32ByteSize * 2
-	if len(response) != totalExpectedResponseLength {
+	response := &responses.LastBlockHeight{}
+	getResponse(t, response, conn)
+
+	if response.Height > 10 {
+		// Observers was started recently, chain height must be relatively small.
 		t.Error()
 	}
 
-	lastBlockHeight, err := utils.UnmarshalUint64(response)
-	if err != nil {
-		t.Error(err)
-	}
-
-	fmt.Println(lastBlockHeight)
-	if lastBlockHeight > 10 {
+	if response.Height < 1 {
+		// Chain height can't be 0 or less.
 		t.Error()
 	}
 }
