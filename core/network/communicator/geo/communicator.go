@@ -15,20 +15,21 @@ import (
 	"time"
 )
 
-type Receiver struct {
+type Communicator struct {
 	Requests chan geoRequests.Request
 }
 
-func NewReceiver() *Receiver {
-	return &Receiver{
+func New() *Communicator {
+	return &Communicator{
 		Requests: make(chan geoRequests.Request, 256),
 	}
 }
 
-func (r *Receiver) Run(host string, port uint16, errors chan<- error) {
+// todo: replace `globalErrorsFlow chan<- error` by `globalErrorsFlow chan<- errors.E`
+func (r *Communicator) Run(host string, port uint16, globalErrorsFlow chan<- error) {
 	listener, err := net.Listen("tcp", fmt.Sprint(host, ":", port))
 	if err != nil {
-		errors <- err
+		globalErrorsFlow <- err
 		return
 	}
 
@@ -37,7 +38,7 @@ func (r *Receiver) Run(host string, port uint16, errors chan<- error) {
 
 	// Inform outer scope that initialisation was performed well
 	// and no errors has been occurred.
-	errors <- nil
+	globalErrorsFlow <- nil
 
 	r.log().WithFields(log.Fields{
 		"Host": host,
@@ -47,15 +48,16 @@ func (r *Receiver) Run(host string, port uint16, errors chan<- error) {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			errors <- err
+			// todo: throw fatal error
+			globalErrorsFlow <- err
 			return
 		}
 
-		go r.handleConnection(conn, errors)
+		go r.handleConnection(conn, globalErrorsFlow)
 	}
 }
 
-func (r *Receiver) handleConnection(conn net.Conn, globalErrorsFlow chan<- error) {
+func (r *Communicator) handleConnection(conn net.Conn, globalErrorsFlow chan<- error) {
 	processError := func(err errors.E) {
 		conn.Close()
 	}
@@ -75,7 +77,7 @@ func (r *Receiver) handleConnection(conn net.Conn, globalErrorsFlow chan<- error
 	go r.handleRequest(conn, request, globalErrorsFlow)
 }
 
-func (r *Receiver) handleRequest(conn net.Conn, request geoRequests.Request, globalErrorsFlow chan<- error) {
+func (r *Communicator) handleRequest(conn net.Conn, request geoRequests.Request, globalErrorsFlow chan<- error) {
 	defer conn.Close()
 
 	select {
@@ -90,7 +92,7 @@ func (r *Receiver) handleRequest(conn net.Conn, request geoRequests.Request, glo
 	}
 }
 
-func (r *Receiver) handleResponseIfAny(conn net.Conn, request geoRequests.Request, globalErrorsFlow chan<- error) {
+func (r *Communicator) handleResponseIfAny(conn net.Conn, request geoRequests.Request, globalErrorsFlow chan<- error) {
 	processResponseSending := func(response encoding.BinaryMarshaler) {
 		binaryData, err := response.MarshalBinary()
 		if err != nil {
@@ -122,7 +124,7 @@ func (r *Receiver) handleResponseIfAny(conn net.Conn, request geoRequests.Reques
 	}
 }
 
-func (r *Receiver) receiveData(conn net.Conn) (data []byte, e errors.E) {
+func (r *Communicator) receiveData(conn net.Conn) (data []byte, e errors.E) {
 	reader := bufio.NewReader(conn)
 
 	messageSizeBinary := []byte{0, 0, 0, 0}
@@ -160,7 +162,7 @@ func (r *Receiver) receiveData(conn net.Conn) (data []byte, e errors.E) {
 	}
 }
 
-func (r *Receiver) sendData(conn net.Conn, data []byte) (e errors.E) {
+func (r *Communicator) sendData(conn net.Conn, data []byte) (e errors.E) {
 	dataSize := len(data)
 	dataSizeBinary := utils.MarshalUint64(uint64(dataSize))
 	data = append(dataSizeBinary, data...)
@@ -183,14 +185,14 @@ func (r *Receiver) sendData(conn net.Conn, data []byte) (e errors.E) {
 	return
 }
 
-func (r *Receiver) logIngress(bytesReceived int, conn net.Conn) {
+func (r *Communicator) logIngress(bytesReceived int, conn net.Conn) {
 	r.log().Debug("[TX<=] ", bytesReceived, "B, ", conn.RemoteAddr())
 }
 
-func (r *Receiver) logEgress(bytesSent int, conn net.Conn) {
+func (r *Communicator) logEgress(bytesSent int, conn net.Conn) {
 	r.log().Debug("[TX=>] ", bytesSent, "B, ", conn.RemoteAddr())
 }
 
-func (r *Receiver) log() *log.Entry {
+func (r *Communicator) log() *log.Entry {
 	return log.WithFields(log.Fields{"prefix": "Network/GEO"})
 }

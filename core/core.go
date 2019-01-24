@@ -25,7 +25,7 @@ type Core struct {
 	keystore              *keystore.KeyStore
 	timer                 *ticker.Ticker
 	observersConfReporter *external.Reporter
-	receiverGEONodes      *geoNet.Receiver
+	receiverGEONodes      *geoNet.Communicator
 	receiverObservers     *observersNet.Receiver
 	senderObservers       *observersNet.Sender
 	poolClaims            *pool.Handler
@@ -53,7 +53,7 @@ func New(conf *settings.Settings) (core *Core, err error) {
 		observersConfReporter: reporter,
 		senderObservers:       observersNet.NewSender(conf, reporter),
 		receiverObservers:     observersNet.NewReceiver(),
-		receiverGEONodes:      geoNet.NewReceiver(),
+		receiverGEONodes:      geoNet.New(),
 		poolClaims:            poolClaims,
 		poolTSLs:              poolTSLs,
 		blocksProducer:        producer,

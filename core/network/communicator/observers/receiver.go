@@ -266,5 +266,5 @@ func (r *Receiver) logIngress(bytesReceived int, conn net.Conn) {
 }
 
 func (r *Receiver) log() *log.Entry {
-	return log.WithFields(log.Fields{"prefix": "Network/Observers/Receiver"})
+	return log.WithFields(log.Fields{"prefix": "Network/Observers/Communicator"})
 }
