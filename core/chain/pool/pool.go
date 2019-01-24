@@ -5,12 +5,14 @@ import (
 	"geo-observers-blockchain/core/common"
 	"geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/common/types/hash"
+	"geo-observers-blockchain/core/common/types/transactions"
 	"time"
 )
 
 type instance interface {
 	encoding.BinaryMarshaler
 	encoding.BinaryUnmarshaler
+	TxID() *transactions.TransactionUUID
 }
 
 type instances struct {

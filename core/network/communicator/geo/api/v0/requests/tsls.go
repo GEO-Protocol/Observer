@@ -3,40 +3,74 @@ package requests
 import (
 	"geo-observers-blockchain/core/common/types/transactions"
 	"geo-observers-blockchain/core/geo"
+	"geo-observers-blockchain/core/network/communicator/geo/api/v0/common"
+	"geo-observers-blockchain/core/utils"
 )
 
 type TSLAppend struct {
-	*requestWithoutResponse
+	*common.RequestWithoutResponse
 	TSL *geo.TSL
 }
 
-func (r *TSLAppend) UnmarshalBinary(data []byte) (err error) {
-	r.TSL = geo.NewTSL()
-	return r.TSL.UnmarshalBinary(data)
+func (request *TSLAppend) MarshalBinary() (data []byte, err error) {
+	typeID := []byte{common.ReqTSLAppend}
+	tslBinary, err := request.TSL.MarshalBinary()
+	return utils.ChainByteSlices(typeID, tslBinary), nil
+}
+
+func (request *TSLAppend) UnmarshalBinary(data []byte) (err error) {
+	request.TSL = geo.NewTSL()
+	return request.TSL.UnmarshalBinary(data)
 }
 
 // --------------------------------------------------------------------------------------------------------------------
 
 type TSLGet struct {
-	*requestWithResponse
+	*common.RequestWithResponse
 	TxID *transactions.TransactionUUID
 }
 
-func (r *TSLGet) UnmarshalBinary(data []byte) (err error) {
-	r.requestWithResponse = newRequestWithResponse()
-	r.TxID = &transactions.TransactionUUID{}
-	return r.TxID.UnmarshalBinary(data)
+func NewTSLGet(TxID *transactions.TransactionUUID) *TSLGet {
+	return &TSLGet{
+		RequestWithResponse: common.NewRequestWithResponse(),
+		TxID:                TxID,
+	}
+}
+
+func (request *TSLGet) MarshalBinary() (data []byte, err error) {
+	typeID := []byte{common.ReqTSLGet}
+	txIDBinary, err := request.TxID.MarshalBinary()
+	return utils.ChainByteSlices(typeID, txIDBinary), nil
+}
+
+func (request *TSLGet) UnmarshalBinary(data []byte) (err error) {
+	request.RequestWithResponse = common.NewRequestWithResponse()
+	request.TxID = &transactions.TransactionUUID{}
+	return request.TxID.UnmarshalBinary(data)
 }
 
 // --------------------------------------------------------------------------------------------------------------------
 
 type TSLIsPresent struct {
-	*requestWithResponse
+	*common.RequestWithResponse
 	TxID *transactions.TransactionUUID
 }
 
-func (r *TSLIsPresent) UnmarshalBinary(data []byte) (err error) {
-	r.requestWithResponse = newRequestWithResponse()
-	r.TxID = &transactions.TransactionUUID{}
-	return r.TxID.UnmarshalBinary(data)
+func NewTSLIsPresent(TxID *transactions.TransactionUUID) *TSLIsPresent {
+	return &TSLIsPresent{
+		RequestWithResponse: common.NewRequestWithResponse(),
+		TxID:                TxID,
+	}
+}
+
+func (request *TSLIsPresent) MarshalBinary() (data []byte, err error) {
+	typeID := []byte{common.ReqTSLIsPresent}
+	txIDBinary, err := request.TxID.MarshalBinary()
+	return utils.ChainByteSlices(typeID, txIDBinary), nil
+}
+
+func (request *TSLIsPresent) UnmarshalBinary(data []byte) (err error) {
+	request.RequestWithResponse = common.NewRequestWithResponse()
+	request.TxID = &transactions.TransactionUUID{}
+	return request.TxID.UnmarshalBinary(data)
 }

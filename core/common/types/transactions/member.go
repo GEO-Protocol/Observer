@@ -16,6 +16,13 @@ type Member struct {
 	Signature *lamport.Signature
 }
 
+func NewMember(memberID uint16) *Member {
+	return &Member{
+		ID:        memberID,
+		Signature: &lamport.Signature{},
+	}
+}
+
 func (member *Member) MarshalBinary() (data []byte, err error) {
 	idBinary := utils.MarshalUint16(member.ID)
 	signatureBinary, err := member.Signature.MarshalBinary()

@@ -45,7 +45,10 @@ type Producer struct {
 	OutgoingResponsesChainTop                chan *responses.ChainTop
 
 	// GEO Node interface
-	IncomingRequestsLastBlockHeight chan *geoRequests.LastBlockHeight
+	GEORequestsLastBlockHeight chan *geoRequests.LastBlockNumber
+	GEORequestsClaimIsPresent  chan *geoRequests.ClaimIsPresent
+	GEORequestsTSLIsPresent    chan *geoRequests.TSLIsPresent
+	GEORequestsTSLGet          chan *geoRequests.TSLGet
 
 	// Internal interface
 	IncomingEventTimeFrameEnded chan *ticker.EventTimeFrameEnd
@@ -77,7 +80,10 @@ func NewProducer(
 		OutgoingResponsesChainTop:                make(chan *responses.ChainTop, 1),
 
 		// GEO Node interface
-		IncomingRequestsLastBlockHeight: make(chan *geoRequests.LastBlockHeight, 1),
+		GEORequestsLastBlockHeight: make(chan *geoRequests.LastBlockNumber, 1),
+		GEORequestsClaimIsPresent:  make(chan *geoRequests.ClaimIsPresent, 1),
+		GEORequestsTSLIsPresent:    make(chan *geoRequests.TSLIsPresent, 1),
+		GEORequestsTSLGet:          make(chan *geoRequests.TSLGet, 1),
 
 		// Internal interface
 		IncomingEventTimeFrameEnded: make(chan *ticker.EventTimeFrameEnd, 1),
@@ -131,13 +137,25 @@ func (p *Producer) Run(globalErrorsFlow chan<- error) {
 			p.handleErrorIfAny(
 				p.processTick(tick, conf))
 
-		case incomingRequestChainTop := <-p.IncomingRequestsChainTop:
+		case reqChainTop := <-p.IncomingRequestsChainTop:
 			p.handleErrorIfAny(
-				p.processChainTopRequest(incomingRequestChainTop, conf))
+				p.processChainTopRequest(reqChainTop, conf))
 
-		case incomingRequestLastBlockHeight := <-p.IncomingRequestsLastBlockHeight:
+		case reqLastBlockHeight := <-p.GEORequestsLastBlockHeight:
 			p.handleErrorIfAny(p.processGEOLastBlockHeightRequest(
-				incomingRequestLastBlockHeight))
+				reqLastBlockHeight))
+
+		case reqClaimIsPresent := <-p.GEORequestsClaimIsPresent:
+			p.handleErrorIfAny(p.processGEOClaimIsPresentRequest(
+				reqClaimIsPresent))
+
+		case reqTSLIsPresent := <-p.GEORequestsTSLIsPresent:
+			p.handleErrorIfAny(p.processGEOTSLIsPresentRequest(
+				reqTSLIsPresent))
+
+		case reqTSLGet := <-p.GEORequestsTSLGet:
+			p.handleErrorIfAny(p.processGEOTSLGetRequest(
+				reqTSLGet))
 		}
 	}
 }
@@ -832,10 +850,90 @@ func (p *Producer) hasProposedBlock() bool {
 	return p.nextBlock != nil
 }
 
-func (p *Producer) processGEOLastBlockHeightRequest(req *geoRequests.LastBlockHeight) (err error) {
+func (p *Producer) processGEOLastBlockHeightRequest(req *geoRequests.LastBlockNumber) (err error) {
 	req.ResponseChannel() <- &geoResponses.LastBlockHeight{
 		Height: p.chain.Height(),
 	}
+	return
+}
+
+func (p *Producer) processGEOClaimIsPresentRequest(req *geoRequests.ClaimIsPresent) (err error) {
+	resultsChannel, errorsChannel := p.poolClaims.ContainsInstance(req.TxID)
+
+	presentInPool := false
+	select {
+	case result := <-resultsChannel:
+		presentInPool = result
+
+	case err := <-errorsChannel:
+		return err
+
+	case <-time.After(time.Second * 2):
+		return errors.TimeoutFired
+	}
+
+	blockNumber, err := p.chain.BlockWithClaim(req.TxID)
+	if err != nil {
+		return err
+	}
+
+	response := &geoResponses.ClaimIsPresent{
+		PresentInBlock: blockNumber,
+		PresentInPool:  presentInPool,
+	}
+	req.ResponseChannel() <- response
+	return
+}
+
+func (p *Producer) processGEOTSLIsPresentRequest(req *geoRequests.TSLIsPresent) (err error) {
+	resultsChannel, errorsChannel := p.poolTSLs.ContainsInstance(req.TxID)
+
+	presentInPool := false
+	select {
+	case result := <-resultsChannel:
+		presentInPool = result
+
+	case err := <-errorsChannel:
+		return err
+
+	case <-time.After(time.Second * 2):
+		return errors.TimeoutFired
+	}
+
+	blockNumber, err := p.chain.BlockWithTSL(req.TxID)
+	if err != nil {
+		return err
+	}
+
+	response := &geoResponses.TSLIsPresent{
+		PresentInBlock: blockNumber,
+		PresentInPool:  presentInPool,
+	}
+	req.ResponseChannel() <- response
+	return
+}
+
+func (p *Producer) processGEOTSLGetRequest(req *geoRequests.TSLGet) (err error) {
+	sendResponse := func(tsl *geo.TSL) {
+		req.ResponseChannel() <- &geoResponses.TSLGet{
+			TSL:       nil,
+			IsPresent: false,
+		}
+	}
+
+	sendNotFound := func() {
+		req.ResponseChannel() <- &geoResponses.TSLGet{IsPresent: false}
+	}
+
+	tsl, err := p.chain.GetTSL(req.TxID)
+	if err != nil {
+		if err == errors.NotFound {
+			sendNotFound()
+		}
+		return
+	}
+
+	sendResponse(tsl)
 	return
 }
 

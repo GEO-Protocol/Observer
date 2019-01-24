@@ -76,6 +76,7 @@ var (
 	ExpectationFailed   = errors.New("expecteation failed")
 	NoConsensus         = errors.New("no consensus")
 	ValidationFailed    = errors.New("validation failed")
+	TimeoutFired        = errors.New("timeout fired ")
 
 	// Memory error
 	InvalidCopyOperation     = errors.New("invalid copy operation")

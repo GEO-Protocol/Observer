@@ -5,6 +5,7 @@ import (
 	"geo-observers-blockchain/core/chain/signatures"
 	"geo-observers-blockchain/core/common"
 	"geo-observers-blockchain/core/common/errors"
+	"geo-observers-blockchain/core/common/types/transactions"
 	"geo-observers-blockchain/core/geo"
 	"geo-observers-blockchain/core/storage"
 	"geo-observers-blockchain/core/utils"
@@ -45,6 +46,73 @@ func (chain *Chain) Height() uint64 {
 	}
 
 	return recordsCount
+}
+
+// BlockWithClaim returns number of block in which claim with specified transaction has been included.
+// If no claim with specified transaction is present in chain - returns 0.
+func (chain *Chain) BlockWithClaim(TxID *transactions.TransactionUUID) (blockNumber uint64, err error) {
+	// todo: add indexing and remove ugly linear search
+
+	var totalBlocksCount = chain.Height()
+	for blockNumber = 1; blockNumber < totalBlocksCount; blockNumber++ {
+		b, err := chain.BlockAt(blockNumber)
+		if err != nil {
+			return 0, err
+		}
+
+		for _, claim := range b.Body.Claims.At {
+			if claim.TxUUID.Compare(TxID) {
+				return blockNumber, nil
+			}
+		}
+	}
+
+	return 0, nil
+}
+
+// BlockWithTSL returns number of block in which tsl with specified transaction has been included.
+// If no tsl with specified transaction is present in chain - returns 0.
+func (chain *Chain) BlockWithTSL(TxID *transactions.TransactionUUID) (blockNumber uint64, err error) {
+	// todo: add indexing and remove ugly linear search
+
+	var totalBlocksCount = chain.Height()
+	for blockNumber = 1; blockNumber < totalBlocksCount; blockNumber++ {
+		b, err := chain.BlockAt(blockNumber)
+		if err != nil {
+			return 0, err
+		}
+
+		for _, tsl := range b.Body.TSLs.At {
+			if tsl.TxUUID.Compare(TxID) {
+				return blockNumber, nil
+			}
+		}
+	}
+
+	return 0, nil
+}
+
+func (chain *Chain) GetTSL(TxID *transactions.TransactionUUID) (tsl *geo.TSL, err error) {
+	// todo: add indexing and remove ugly linear search
+
+	var (
+		totalBlocksCount = chain.Height()
+		blockNumber      uint64
+	)
+	for blockNumber = 1; blockNumber < totalBlocksCount; blockNumber++ {
+		b, err := chain.BlockAt(blockNumber)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, tsl := range b.Body.TSLs.At {
+			if tsl.TxUUID.Compare(TxID) {
+				return tsl, nil
+			}
+		}
+	}
+
+	return nil, errors.NotFound
 }
 
 func (chain *Chain) Append(bs *block.Signed) (err error) {

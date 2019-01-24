@@ -6,6 +6,7 @@ import (
 	"geo-observers-blockchain/core/crypto/keystore"
 	"geo-observers-blockchain/core/geo"
 	geoNet "geo-observers-blockchain/core/network/communicator/geo"
+	geoRequestsCommon "geo-observers-blockchain/core/network/communicator/geo/api/v0/common"
 	geoRequests "geo-observers-blockchain/core/network/communicator/geo/api/v0/requests"
 	observersNet "geo-observers-blockchain/core/network/communicator/observers"
 	"geo-observers-blockchain/core/network/communicator/observers/requests"
@@ -316,7 +317,7 @@ func (c *Core) processIncomingRequest(r requests.Request) (err error) {
 	return
 }
 
-func (c *Core) processIncomingGEONodeRequest(r geoRequests.Request) (err error) {
+func (c *Core) processIncomingGEONodeRequest(r geoRequestsCommon.Request) (err error) {
 	processTransferringFail := func(instance, processor interface{}) {
 		err = utils.Error("core",
 			reflect.TypeOf(instance).String()+
@@ -326,11 +327,18 @@ func (c *Core) processIncomingGEONodeRequest(r geoRequests.Request) (err error) 
 	}
 
 	switch r.(type) {
-	case *geoRequests.LastBlockHeight:
+	case *geoRequests.LastBlockNumber:
 		select {
-		case c.blocksProducer.IncomingRequestsLastBlockHeight <- r.(*geoRequests.LastBlockHeight):
+		case c.blocksProducer.GEORequestsLastBlockHeight <- r.(*geoRequests.LastBlockNumber):
 		default:
-			processTransferringFail(r, c.poolTSLs)
+			processTransferringFail(r, c.blocksProducer)
+		}
+
+	case *geoRequests.ClaimIsPresent:
+		select {
+		case c.blocksProducer.GEORequestsClaimIsPresent <- r.(*geoRequests.ClaimIsPresent):
+		default:
+			processTransferringFail(r, c.blocksProducer)
 		}
 
 	case *geoRequests.TSLAppend:
@@ -344,7 +352,7 @@ func (c *Core) processIncomingGEONodeRequest(r geoRequests.Request) (err error) 
 		select {
 		case c.poolClaims.IncomingInstances <- r.(*geoRequests.ClaimAppend).Claim:
 		default:
-			processTransferringFail(r, c.poolTSLs)
+			processTransferringFail(r, c.poolClaims)
 		}
 
 	default:

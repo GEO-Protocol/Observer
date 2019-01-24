@@ -2,6 +2,7 @@ package v0
 
 import (
 	"geo-observers-blockchain/core/common/errors"
+	"geo-observers-blockchain/core/network/communicator/geo/api/v0/common"
 	"geo-observers-blockchain/core/network/communicator/geo/api/v0/requests"
 )
 
@@ -9,7 +10,7 @@ const (
 	protocolHeaderBytesSize = 2
 )
 
-func ParseRequest(data []byte) (request requests.Request, e errors.E) {
+func ParseRequest(data []byte) (request common.Request, e errors.E) {
 	e = validateProtocolHeader(data)
 	if e != nil {
 		return
@@ -24,37 +25,34 @@ func validateProtocolHeader(data []byte) (e errors.E) {
 		return errors.AppendStackTrace(errors.InvalidDataFormat)
 	}
 
-	if data[0] != ProtocolVersion {
+	if data[0] != common.ProtocolVersion {
 		return errors.AppendStackTrace(errors.InvalidDataFormat)
 	}
 
 	return
 }
 
-func dispatchRequest(data []byte) (request requests.Request, e errors.E) {
+func dispatchRequest(data []byte) (request common.Request, e errors.E) {
 	requestID := data[0]
 	requestData := data[1:]
 
 	switch requestID {
-	case ReqChainLastBlockNumber:
-		return parseRequest(&requests.LastBlockHeight{}, requestData)
+	case common.ReqChainLastBlockNumber:
+		return parseRequest(&requests.LastBlockNumber{}, requestData)
 
-	case ReqTSLAppend:
+	case common.ReqTSLAppend:
 		return parseRequest(&requests.TSLAppend{}, requestData)
 
-	case ReqTSLGet:
+	case common.ReqTSLGet:
 		return parseRequest(&requests.TSLGet{}, requestData)
 
-	case ReqTSLIsPresent:
+	case common.ReqTSLIsPresent:
 		return parseRequest(&requests.TSLIsPresent{}, requestData)
 
-	case ReqClaimAppend:
+	case common.ReqClaimAppend:
 		return parseRequest(&requests.ClaimAppend{}, requestData)
 
-	case ReqClaimGet:
-		return parseRequest(&requests.ClaimGet{}, requestData)
-
-	case ReqClaimIsPresent:
+	case common.ReqClaimIsPresent:
 		return parseRequest(&requests.ClaimIsPresent{}, requestData)
 
 	default:
@@ -62,7 +60,7 @@ func dispatchRequest(data []byte) (request requests.Request, e errors.E) {
 	}
 }
 
-func parseRequest(request requests.Request, data []byte) (r requests.Request, e errors.E) {
+func parseRequest(request common.Request, data []byte) (r common.Request, e errors.E) {
 	err := request.UnmarshalBinary(data)
 	if err != nil {
 		e = errors.AppendStackTrace(err)

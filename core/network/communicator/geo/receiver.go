@@ -7,20 +7,21 @@ import (
 	"geo-observers-blockchain/core/common"
 	"geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/network/communicator/geo/api/v0"
-	"geo-observers-blockchain/core/network/communicator/geo/api/v0/requests"
+	geoRequests "geo-observers-blockchain/core/network/communicator/geo/api/v0/common"
 	"geo-observers-blockchain/core/utils"
 	log "github.com/sirupsen/logrus"
 	"net"
+	"reflect"
 	"time"
 )
 
 type Receiver struct {
-	Requests chan requests.Request
+	Requests chan geoRequests.Request
 }
 
 func NewReceiver() *Receiver {
 	return &Receiver{
-		Requests: make(chan requests.Request, 256),
+		Requests: make(chan geoRequests.Request, 256),
 	}
 }
 
@@ -74,19 +75,22 @@ func (r *Receiver) handleConnection(conn net.Conn, globalErrorsFlow chan<- error
 	go r.handleRequest(conn, request, globalErrorsFlow)
 }
 
-func (r *Receiver) handleRequest(conn net.Conn, request requests.Request, globalErrorsFlow chan<- error) {
+func (r *Receiver) handleRequest(conn net.Conn, request geoRequests.Request, globalErrorsFlow chan<- error) {
 	defer conn.Close()
 
 	select {
 	case r.Requests <- request:
 		r.handleResponseIfAny(conn, request, globalErrorsFlow)
+		r.log().WithFields(log.Fields{
+			"Type": reflect.TypeOf(request).String(),
+		}).Debug("Transferred to core")
 
 	default:
 		globalErrorsFlow <- errors.ChannelTransferringFailed
 	}
 }
 
-func (r *Receiver) handleResponseIfAny(conn net.Conn, request requests.Request, globalErrorsFlow chan<- error) {
+func (r *Receiver) handleResponseIfAny(conn net.Conn, request geoRequests.Request, globalErrorsFlow chan<- error) {
 	processResponseSending := func(response encoding.BinaryMarshaler) {
 		binaryData, err := response.MarshalBinary()
 		if err != nil {
@@ -108,6 +112,9 @@ func (r *Receiver) handleResponseIfAny(conn net.Conn, request requests.Request, 
 
 	select {
 	case response := <-request.ResponseChannel():
+		r.log().WithFields(log.Fields{
+			"Type": reflect.TypeOf(response).String(),
+		}).Debug("Enqueued for sending")
 		processResponseSending(response)
 
 	case <-time.After(time.Second * 2):
@@ -172,6 +179,7 @@ func (r *Receiver) sendData(conn net.Conn, data []byte) (e errors.E) {
 		totalBytesSent += bytesWritten
 	}
 
+	r.logEgress(totalBytesSent, conn)
 	return
 }
 

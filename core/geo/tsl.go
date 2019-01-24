@@ -56,3 +56,7 @@ func (t *TSL) UnmarshalBinary(data []byte) (err error) {
 	t.Members = &transactions.Members{}
 	return t.Members.UnmarshalBinary(data[common.TransactionUUIDSize:])
 }
+
+func (t *TSL) TxID() *transactions.TransactionUUID {
+	return t.TxUUID
+}

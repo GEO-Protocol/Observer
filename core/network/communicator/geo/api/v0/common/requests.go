@@ -1,4 +1,4 @@
-package requests
+package common
 
 import "encoding"
 
@@ -12,24 +12,24 @@ type Request interface {
 
 // --------------------------------------------------------------------------------------------------------------------
 
-type requestWithResponse struct {
+type RequestWithResponse struct {
 	response chan encoding.BinaryMarshaler
 }
 
-func newRequestWithResponse() *requestWithResponse {
-	return &requestWithResponse{
+func NewRequestWithResponse() *RequestWithResponse {
+	return &RequestWithResponse{
 		response: make(chan encoding.BinaryMarshaler, 1),
 	}
 }
 
-func (r *requestWithResponse) ResponseChannel() chan encoding.BinaryMarshaler {
+func (r *RequestWithResponse) ResponseChannel() chan encoding.BinaryMarshaler {
 	return r.response
 }
 
 // --------------------------------------------------------------------------------------------------------------------
 
-type requestWithoutResponse struct{}
+type RequestWithoutResponse struct{}
 
-func (r *requestWithoutResponse) ResponseChannel() chan encoding.BinaryMarshaler {
+func (r *RequestWithoutResponse) ResponseChannel() chan encoding.BinaryMarshaler {
 	return nil
 }

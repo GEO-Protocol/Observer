@@ -15,6 +15,23 @@ type Members struct {
 	At []*Member
 }
 
+func (members *Members) Add(member *Member) error {
+	if member == nil {
+		return errors.NilParameter
+	}
+
+	if members.Count() < MembersMaxCount {
+		members.At = append(members.At, member)
+		return nil
+	}
+
+	return errors.MaxCountReached
+}
+
+func (members *Members) Count() uint16 {
+	return uint16(len(members.At))
+}
+
 func (members *Members) MarshalBinary() (data []byte, err error) {
 	totalMembersCount := len(members.At)
 	if totalMembersCount > MembersMaxCount {
