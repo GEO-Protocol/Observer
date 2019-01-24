@@ -68,7 +68,7 @@ func TestInvalidTSL(t *testing.T) {
 }
 
 func requestTSLAppend(t *testing.T, tsl *geo.TSL) {
-	conn := connectToObserver(t)
+	conn := ConnectToObserver(t)
 	defer conn.Close()
 
 	request := requests.TSLAppend{TSL: tsl}
@@ -77,7 +77,7 @@ func requestTSLAppend(t *testing.T, tsl *geo.TSL) {
 		t.Error()
 	}
 
-	sendData(t, conn, requestBinary)
+	SendData(t, conn, requestBinary)
 }
 
 func createEmptyTSL(membersCount int) (tsl *geo.TSL) {

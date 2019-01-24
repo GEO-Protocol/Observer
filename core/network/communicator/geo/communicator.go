@@ -15,6 +15,11 @@ import (
 	"time"
 )
 
+const (
+	MaxMessageSize = 1024 * 1024 * 32 // 32 MB
+	MinMessageSize = 1
+)
+
 type Communicator struct {
 	Requests chan geoRequests.Request
 }
@@ -133,25 +138,31 @@ func (r *Communicator) receiveData(conn net.Conn) (data []byte, e errors.E) {
 		e = errors.AppendStackTrace(err)
 		return
 	}
-
 	if bytesRead != common.Uint32ByteSize {
 		e = errors.AppendStackTrace(errors.InvalidDataFormat)
 		return
 	}
+	_, _ = reader.Discard(4)
 
 	messageSize, err := utils.UnmarshalUint32(messageSizeBinary)
 	if err != nil {
 		e = errors.AppendStackTrace(errors.InvalidDataFormat)
 		return
 	}
+	if messageSize > MaxMessageSize || messageSize < MinMessageSize {
+		e = errors.AppendStackTrace(errors.InvalidDataFormat)
+		return
+	}
 
-	_, _ = reader.Discard(4)
 	var offset uint32 = 0
 	data = make([]byte, messageSize, messageSize)
 	for {
 		bytesReceived, err := reader.Read(data[offset:])
 		if err != nil {
 			return nil, errors.AppendStackTrace(err)
+		}
+		if bytesReceived == 0 {
+			return nil, errors.AppendStackTrace(errors.NoData)
 		}
 
 		offset += uint32(bytesReceived)

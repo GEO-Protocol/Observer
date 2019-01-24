@@ -20,13 +20,13 @@ func TestClaimIsRequestID(t *testing.T) {
 }
 
 func requestClaimIsPresent(t *testing.T, TxID *transactions.TransactionUUID) *responses.ClaimIsPresent {
-	conn := connectToObserver(t)
+	conn := ConnectToObserver(t)
 	defer conn.Close()
 
 	request := requests.NewClaimIsPresent(TxID)
-	sendRequest(t, request, conn)
+	SendRequest(t, request, conn)
 
 	response := &responses.ClaimIsPresent{}
-	getResponse(t, response, conn)
+	GetResponse(t, response, conn)
 	return response
 }

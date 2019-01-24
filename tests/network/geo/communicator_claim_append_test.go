@@ -68,7 +68,7 @@ func TestInvalidClaim(t *testing.T) {
 }
 
 func requestClaimAppend(t *testing.T, claim *geo.Claim) {
-	conn := connectToObserver(t)
+	conn := ConnectToObserver(t)
 	defer conn.Close()
 
 	request := requests.ClaimAppend{Claim: claim}
@@ -77,7 +77,7 @@ func requestClaimAppend(t *testing.T, claim *geo.Claim) {
 		t.Error()
 	}
 
-	sendData(t, conn, requestBinary)
+	SendData(t, conn, requestBinary)
 }
 
 func createEmptyClaim(membersCount int) (claim *geo.Claim) {

@@ -94,6 +94,7 @@ var (
 	// Sequences
 	EmptySequence    = errors.New("empty sequence")
 	NotFound         = errors.New("not found")
+	NoData           = errors.New("no data")
 	TooLargeSequence = errors.New("too large sequence")
 	Collision        = errors.New("collision detected")
 

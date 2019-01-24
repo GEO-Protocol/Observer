@@ -40,13 +40,13 @@ func TestTSLGet(t *testing.T) {
 }
 
 func requestTSLGet(t *testing.T, TxID *transactions.TransactionUUID) *responses.TSLGet {
-	conn := connectToObserver(t)
+	conn := ConnectToObserver(t)
 	defer conn.Close()
 
 	request := requests.NewTSLGet(TxID)
-	sendRequest(t, request, conn)
+	SendRequest(t, request, conn)
 
 	response := &responses.TSLGet{}
-	getResponse(t, response, conn)
+	GetResponse(t, response, conn)
 	return response
 }

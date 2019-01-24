@@ -19,14 +19,14 @@ func TestLastBlockNumberRequestID(t *testing.T) {
 }
 
 func TestLastBlockHeight(t *testing.T) {
-	conn := connectToObserver(t)
+	conn := ConnectToObserver(t)
 	defer conn.Close()
 
 	request := &requests.LastBlockNumber{}
-	sendRequest(t, request, conn)
+	SendRequest(t, request, conn)
 
 	response := &responses.LastBlockHeight{}
-	getResponse(t, response, conn)
+	GetResponse(t, response, conn)
 
 	if response.Height > 10 {
 		// Observers was started recently, chain height must be relatively small.

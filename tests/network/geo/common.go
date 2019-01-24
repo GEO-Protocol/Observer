@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-func connectToObserver(t *testing.T) (conn net.Conn) {
+func ConnectToObserver(t *testing.T) (conn net.Conn) {
 	conn, err := net.Dial("tcp", fmt.Sprint(tests.ObserverHost, ":", tests.ObserverPort))
 	if err != nil {
 		t.Fatal("could not connect to observer: ", err)
@@ -21,7 +21,7 @@ func connectToObserver(t *testing.T) (conn net.Conn) {
 	return
 }
 
-func getResponse(t *testing.T, response encoding.BinaryUnmarshaler, conn net.Conn) {
+func GetResponse(t *testing.T, response encoding.BinaryUnmarshaler, conn net.Conn) {
 	_ = conn.SetReadDeadline(time.Now().Add(time.Second * 3))
 	reader := bufio.NewReader(conn)
 
@@ -62,16 +62,25 @@ func getResponse(t *testing.T, response encoding.BinaryUnmarshaler, conn net.Con
 	}
 }
 
-func sendRequest(t *testing.T, request encoding.BinaryMarshaler, conn net.Conn) {
+func SendRequest(t *testing.T, request encoding.BinaryMarshaler, conn net.Conn) {
 	requestBinary, err := request.MarshalBinary()
 	if err != nil {
 		t.Error()
 	}
 
-	sendData(t, conn, requestBinary)
+	SendData(t, conn, requestBinary)
 }
 
-func sendData(t *testing.T, conn net.Conn, data []byte) {
+func SendData(t *testing.T, conn net.Conn, data []byte) {
+	data = append([]byte{0}, data...) // protocol header
+
+	err := SendDataOrReportError(conn, data)
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func SendDataOrReportError(conn net.Conn, data []byte) (err error) {
 	data = append([]byte{0}, data...) // protocol header
 
 	var (
@@ -79,13 +88,11 @@ func sendData(t *testing.T, conn net.Conn, data []byte) {
 		dataLengthBinary = utils.MarshalUint64(dataLength)
 	)
 
-	_, err := conn.Write(dataLengthBinary)
-	if err != nil {
-		t.Error("cant send payload: ", err)
-	}
-
+	data = append(dataLengthBinary, data...)
 	_, err = conn.Write(data)
 	if err != nil {
-		t.Error("cant send payload: ", err)
+		return
 	}
+
+	return
 }

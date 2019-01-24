@@ -20,13 +20,13 @@ func TestTSLIsPresentRequestID(t *testing.T) {
 }
 
 func requestTSLIsPresent(t *testing.T, TxID *transactions.TransactionUUID) *responses.TSLIsPresent {
-	conn := connectToObserver(t)
+	conn := ConnectToObserver(t)
 	defer conn.Close()
 
 	request := requests.NewTSLIsPresent(TxID)
-	sendRequest(t, request, conn)
+	SendRequest(t, request, conn)
 
 	response := &responses.TSLIsPresent{}
-	getResponse(t, response, conn)
+	GetResponse(t, response, conn)
 	return response
 }
