@@ -113,12 +113,9 @@ func (s *Sender) processRequestSending(request requests.Request, errors chan<- e
 	// todo: add positional number to the data
 
 	switch request.(type) {
-	case *requests.SynchronisationTimeFrames:
-		send(constants.StreamTypeRequestTimeFrames, nil)
-
 	case *requests.PoolInstanceBroadcast:
 		switch request.(*requests.PoolInstanceBroadcast).Instance.(type) {
-		case *geo.TransactionSignaturesList:
+		case *geo.TSL:
 			send(
 				constants.StreamTypeRequestTSLBroadcast,
 				request.(*requests.PoolInstanceBroadcast).DestinationObservers())
@@ -134,12 +131,19 @@ func (s *Sender) processRequestSending(request requests.Request, errors chan<- e
 		}
 
 	case *requests.CandidateDigestBroadcast:
-		send(constants.StreamTypeRequestDigestBroadcast, nil)
+		send(constants.StreamTypeRequestDigestBroadcast, allObservers())
 
 	case *requests.BlockSignaturesBroadcast:
-		send(constants.StreamTypeRequestBlockSignaturesBroadcast, nil)
+		send(constants.StreamTypeRequestBlockSignaturesBroadcast, allObservers())
+
+	case *requests.SynchronisationTimeFrames:
+		send(constants.StreamTypeRequestTimeFrames, allObservers())
+
+	case *requests.ChainTop:
+		send(constants.StreamTypeRequestChainTop, allObservers())
 
 	default:
+		// todo: enhance this ugly errors handling
 		errors <- utils.Error(
 			"observers sender",
 			"unexpected request type occurred")
@@ -149,6 +153,7 @@ func (s *Sender) processRequestSending(request requests.Request, errors chan<- e
 
 func (s *Sender) processResponseSending(response responses.Response, errors chan<- error) {
 	if response == nil {
+		// todo: fix this ugly errors2 namespace
 		errors <- errors2.NilParameter
 		return
 	}
@@ -187,6 +192,11 @@ func (s *Sender) processResponseSending(response responses.Response, errors chan
 	case *responses.CandidateDigestApprove:
 		send(
 			constants.StreamTypeResponseDigestApprove,
+			[]uint16{response.Request().ObserverIndex()})
+
+	case *responses.ChainTop:
+		send(
+			constants.StreamTypeResponseChainTop,
 			[]uint16{response.Request().ObserverIndex()})
 
 	default:

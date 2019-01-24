@@ -17,6 +17,9 @@ var (
 	DataTypeResponseDigestApprove  uint8 = 135
 
 	DataTypeRequestBlockSignaturesBroadcast uint8 = 136
+
+	DataTypeRequestChainTop  uint8 = 137
+	DataTypeResponseChainTop uint8 = 138
 )
 
 var (
@@ -34,4 +37,7 @@ var (
 	StreamTypeResponseDigestApprove  = []byte{DataTypeResponseDigestApprove}
 
 	StreamTypeRequestBlockSignaturesBroadcast = []byte{DataTypeRequestBlockSignaturesBroadcast}
+
+	StreamTypeRequestChainTop  = []byte{DataTypeRequestChainTop}
+	StreamTypeResponseChainTop = []byte{DataTypeResponseChainTop}
 )

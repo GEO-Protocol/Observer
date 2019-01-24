@@ -106,7 +106,7 @@ func TestClaims_MarshallBinary_OneClaim_1024PubKeys(t *testing.T) {
 			t.Fatal()
 		}
 
-		_ = claim.PubKeys.Add(pubKey)
+		_ = claim.Members.Add(pubKey)
 	}
 
 	claims := &Claims{}
@@ -133,14 +133,14 @@ func TestClaims_MarshallBinary_OneClaim_1024PubKeys(t *testing.T) {
 	}
 
 	// Pub keys count
-	pubKeysCountAreEqual := restoredClaims.At[0].PubKeys.Count() == restoredClaims.At[0].PubKeys.Count()
+	pubKeysCountAreEqual := restoredClaims.At[0].Members.Count() == restoredClaims.At[0].Members.Count()
 	if !pubKeysCountAreEqual {
 		t.Fatal()
 	}
 
-	// PubKeys data
-	for i, pubKey := range claims.At[0].PubKeys.At {
-		restoredPubKey := restoredClaims.At[0].PubKeys.At[i]
+	// Members data
+	for i, pubKey := range claims.At[0].Members.At {
+		restoredPubKey := restoredClaims.At[0].Members.At[i]
 		pubKeyNIsEqual := bytes.Compare(pubKey.Bytes[:], restoredPubKey.Bytes[:]) == 0
 		if !pubKeyNIsEqual {
 			t.Fatal()
@@ -168,7 +168,7 @@ func TestClaims_MarshallBinary_MaxElementsCount(t *testing.T) {
 		if err != nil {
 			t.Fatal()
 		}
-		_ = claim.PubKeys.Add(pubKey)
+		_ = claim.Members.Add(pubKey)
 
 		err = claims.Add(claim)
 		if err != nil {
@@ -199,8 +199,8 @@ func TestClaims_MarshallBinary_MaxElementsCount(t *testing.T) {
 			t.Fatal()
 		}
 
-		for j, key := range restoredClaim.PubKeys.At {
-			pubKeyNIsEqual := bytes.Compare(key.Bytes[:], claims.At[i].PubKeys.At[j].Bytes[:]) == 0
+		for j, key := range restoredClaim.Members.At {
+			pubKeyNIsEqual := bytes.Compare(key.Bytes[:], claims.At[i].Members.At[j].Bytes[:]) == 0
 			if !pubKeyNIsEqual {
 				t.Fatal()
 			}

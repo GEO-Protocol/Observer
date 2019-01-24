@@ -41,7 +41,7 @@ func (s *IndexedObserversSignatures) IsMajorityApprovesCollected() bool {
 
 		} else {
 			negativeVotesPresent++
-			if negativeVotesPresent >= common.ObserversMaxCount-common.ObserversConsensusCount {
+			if negativeVotesPresent > common.ObserversMaxCount-common.ObserversConsensusCount {
 				return false
 			}
 		}
