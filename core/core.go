@@ -334,6 +334,13 @@ func (c *Core) processIncomingGEONodeRequest(r geoRequestsCommon.Request) (err e
 			processTransferringFail(r, c.blocksProducer)
 		}
 
+	case *geoRequests.ClaimAppend:
+		select {
+		case c.poolClaims.IncomingInstances <- r.(*geoRequests.ClaimAppend).Claim:
+		default:
+			processTransferringFail(r, c.poolClaims)
+		}
+
 	case *geoRequests.ClaimIsPresent:
 		select {
 		case c.blocksProducer.GEORequestsClaimIsPresent <- r.(*geoRequests.ClaimIsPresent):
@@ -348,11 +355,18 @@ func (c *Core) processIncomingGEONodeRequest(r geoRequestsCommon.Request) (err e
 			processTransferringFail(r, c.poolTSLs)
 		}
 
-	case *geoRequests.ClaimAppend:
+	case *geoRequests.TSLIsPresent:
 		select {
-		case c.poolClaims.IncomingInstances <- r.(*geoRequests.ClaimAppend).Claim:
+		case c.blocksProducer.GEORequestsTSLIsPresent <- r.(*geoRequests.TSLIsPresent):
 		default:
-			processTransferringFail(r, c.poolClaims)
+			processTransferringFail(r, c.blocksProducer)
+		}
+
+	case *geoRequests.TSLGet:
+		select {
+		case c.blocksProducer.GEORequestsTSLGet <- r.(*geoRequests.TSLGet):
+		default:
+			processTransferringFail(r, c.blocksProducer)
 		}
 
 	default:

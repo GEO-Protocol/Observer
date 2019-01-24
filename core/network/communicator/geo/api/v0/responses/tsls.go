@@ -55,6 +55,7 @@ func (response *TSLGet) MarshalBinary() (data []byte, err error) {
 		data[0] = 1
 	} else {
 		data[0] = 0
+		return
 	}
 
 	tslBinary, err := response.TSL.MarshalBinary()
@@ -66,7 +67,7 @@ func (response *TSLGet) MarshalBinary() (data []byte, err error) {
 }
 
 func (response *TSLGet) UnmarshalBinary(data []byte) (err error) {
-	if len(data) < TSLGetMinBinarySize {
+	if len(data) < 1 {
 		return errors.InvalidDataFormat
 	}
 
@@ -75,7 +76,10 @@ func (response *TSLGet) UnmarshalBinary(data []byte) (err error) {
 		response.IsPresent = false
 	}
 
-	response.TSL = geo.NewTSL()
-	err = response.TSL.UnmarshalBinary(data[1:])
+	if response.IsPresent {
+		response.TSL = geo.NewTSL()
+		err = response.TSL.UnmarshalBinary(data[1:])
+	}
+
 	return
 }
