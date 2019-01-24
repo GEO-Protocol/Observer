@@ -1,10 +1,11 @@
-package geo
+package requests
 
 import (
 	"geo-observers-blockchain/core/common/types/transactions"
 	"geo-observers-blockchain/core/network/communicator/geo/api/v0/common"
 	"geo-observers-blockchain/core/network/communicator/geo/api/v0/requests"
 	"geo-observers-blockchain/core/network/communicator/geo/api/v0/responses"
+	testsCommon "geo-observers-blockchain/tests/network/geo"
 	"testing"
 )
 
@@ -20,13 +21,13 @@ func TestTSLIsPresentRequestID(t *testing.T) {
 }
 
 func requestTSLIsPresent(t *testing.T, TxID *transactions.TransactionUUID) *responses.TSLIsPresent {
-	conn := ConnectToObserver(t)
+	conn := testsCommon.ConnectToObserver(t)
 	defer conn.Close()
 
 	request := requests.NewTSLIsPresent(TxID)
-	SendRequest(t, request, conn)
+	testsCommon.SendRequest(t, request, conn)
 
 	response := &responses.TSLIsPresent{}
-	GetResponse(t, response, conn)
+	testsCommon.GetResponse(t, response, conn)
 	return response
 }

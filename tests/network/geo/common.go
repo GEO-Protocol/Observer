@@ -72,8 +72,6 @@ func SendRequest(t *testing.T, request encoding.BinaryMarshaler, conn net.Conn) 
 }
 
 func SendData(t *testing.T, conn net.Conn, data []byte) {
-	data = append([]byte{0}, data...) // protocol header
-
 	err := SendDataOrReportError(conn, data)
 	if err != nil {
 		t.Error(err)
@@ -88,7 +86,11 @@ func SendDataOrReportError(conn net.Conn, data []byte) (err error) {
 		dataLengthBinary = utils.MarshalUint64(dataLength)
 	)
 
-	data = append(dataLengthBinary, data...)
+	_, err = conn.Write(dataLengthBinary)
+	if err != nil {
+		return
+	}
+
 	_, err = conn.Write(data)
 	if err != nil {
 		return

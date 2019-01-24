@@ -1,4 +1,4 @@
-package geo
+package requests
 
 import (
 	"fmt"
@@ -8,8 +8,6 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	fmt.Println("----1111----")
-
 	err := tests.LaunchTestObserver()
 	if err != nil {
 		fmt.Println(err)

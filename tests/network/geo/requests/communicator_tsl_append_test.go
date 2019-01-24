@@ -1,32 +1,33 @@
-package geo
+package requests
 
 import (
 	"geo-observers-blockchain/core/common/types/transactions"
 	"geo-observers-blockchain/core/geo"
 	"geo-observers-blockchain/core/network/communicator/geo/api/v0/common"
 	"geo-observers-blockchain/core/network/communicator/geo/api/v0/requests"
+	testsCommon "geo-observers-blockchain/tests/network/geo"
 	"testing"
 )
 
 const (
-	AppendClaimRequestID = 128
+	AppendTSLRequestID = 64
 )
 
-func TestClaimAppendRequestID(t *testing.T) {
+func TestTSLAppendRequestID(t *testing.T) {
 	if //noinspection GoBoolExpressions
-	AppendClaimRequestID != common.ReqClaimAppend {
+	AppendTSLRequestID != common.ReqTSLAppend {
 		t.Fatal()
 	}
 }
 
-func TestClaimAppendPoolOnly(t *testing.T) {
+func TestTSLAppendPoolOnly(t *testing.T) {
 	{
 		// TSL with one signature.
 		// (check in pool only).
-		claim := createEmptyClaim(1)
-		requestClaimAppend(t, claim)
+		tsl := createEmptyTSL(1)
+		requestTSLAppend(t, tsl)
 
-		response := requestClaimIsPresent(t, claim.TxUUID)
+		response := requestTSLIsPresent(t, tsl.TxUUID)
 		if !response.PresentInPool {
 			t.Error()
 		}
@@ -43,7 +44,7 @@ func TestClaimAppendPoolOnly(t *testing.T) {
 	}
 }
 
-func TestAppendToChain(t *testing.T) {
+func TestTSLAppendToChain(t *testing.T) {
 	// todo: implement
 
 	{
@@ -55,7 +56,7 @@ func TestAppendToChain(t *testing.T) {
 	}
 }
 
-func TestInvalidClaim(t *testing.T) {
+func TestInvalidTSL(t *testing.T) {
 	// todo: implement
 
 	{
@@ -67,20 +68,20 @@ func TestInvalidClaim(t *testing.T) {
 	}
 }
 
-func requestClaimAppend(t *testing.T, claim *geo.Claim) {
-	conn := ConnectToObserver(t)
+func requestTSLAppend(t *testing.T, tsl *geo.TSL) {
+	conn := testsCommon.ConnectToObserver(t)
 	defer conn.Close()
 
-	request := requests.ClaimAppend{Claim: claim}
-	requestBinary, err := request.MarshallBinary()
+	request := requests.TSLAppend{TSL: tsl}
+	requestBinary, err := request.MarshalBinary()
 	if err != nil {
 		t.Error()
 	}
 
-	SendData(t, conn, requestBinary)
+	testsCommon.SendData(t, conn, requestBinary)
 }
 
-func createEmptyClaim(membersCount int) (claim *geo.Claim) {
+func createEmptyTSL(membersCount int) (tsl *geo.TSL) {
 	txID, _ := transactions.NewRandomTransactionUUID()
 	members := &transactions.Members{}
 
@@ -88,7 +89,7 @@ func createEmptyClaim(membersCount int) (claim *geo.Claim) {
 		_ = members.Add(transactions.NewMember(uint16(i)))
 	}
 
-	claim = &geo.Claim{
+	tsl = &geo.TSL{
 		TxUUID:  txID,
 		Members: members,
 	}
