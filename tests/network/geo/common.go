@@ -2,6 +2,7 @@ package geo
 
 import (
 	"bufio"
+	"encoding"
 	"fmt"
 	"geo-observers-blockchain/core/common"
 	"geo-observers-blockchain/core/utils"
@@ -20,26 +21,7 @@ func connectToObserver(t *testing.T) (conn net.Conn) {
 	return
 }
 
-func sendData(t *testing.T, conn net.Conn, data []byte) {
-	data = append([]byte{0}, data...) // protocol header
-
-	var (
-		dataLength       = uint64(len(data))
-		dataLengthBinary = utils.MarshalUint64(dataLength)
-	)
-
-	_, err := conn.Write(dataLengthBinary)
-	if err != nil {
-		t.Error("cant send payload: ", err)
-	}
-
-	_, err = conn.Write(data)
-	if err != nil {
-		t.Error("cant send payload: ", err)
-	}
-}
-
-func getResponse(t *testing.T, conn net.Conn) (data []byte) {
+func getResponse(t *testing.T, response encoding.BinaryUnmarshaler, conn net.Conn) {
 	_ = conn.SetReadDeadline(time.Now().Add(time.Second * 3))
 	reader := bufio.NewReader(conn)
 
@@ -60,7 +42,7 @@ func getResponse(t *testing.T, conn net.Conn) (data []byte) {
 
 	_, _ = reader.Discard(4)
 	var offset uint32 = 0
-	data = make([]byte, messageSize, messageSize)
+	data := make([]byte, messageSize, messageSize)
 	for {
 		bytesReceived, err := reader.Read(data[offset:])
 		if err != nil {
@@ -69,7 +51,41 @@ func getResponse(t *testing.T, conn net.Conn) (data []byte) {
 
 		offset += uint32(bytesReceived)
 		if offset == messageSize {
-			return data
+			err := response.UnmarshalBinary(data)
+			if err != nil {
+				t.Error()
+				return
+			}
+
+			return
 		}
+	}
+}
+
+func sendRequest(t *testing.T, request encoding.BinaryMarshaler, conn net.Conn) {
+	requestBinary, err := request.MarshalBinary()
+	if err != nil {
+		t.Error()
+	}
+
+	sendData(t, conn, requestBinary)
+}
+
+func sendData(t *testing.T, conn net.Conn, data []byte) {
+	data = append([]byte{0}, data...) // protocol header
+
+	var (
+		dataLength       = uint64(len(data))
+		dataLengthBinary = utils.MarshalUint64(dataLength)
+	)
+
+	_, err := conn.Write(dataLengthBinary)
+	if err != nil {
+		t.Error("cant send payload: ", err)
+	}
+
+	_, err = conn.Write(data)
+	if err != nil {
+		t.Error("cant send payload: ", err)
 	}
 }
