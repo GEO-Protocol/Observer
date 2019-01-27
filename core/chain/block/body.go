@@ -15,7 +15,7 @@ type Body struct {
 	Hash                hash.SHA256Container // todo: replace by BLAKE2b
 	ObserversConfHash   hash.SHA256Container // todo: replace by BLAKE2b
 	Claims              *geo.Claims
-	TSLs                *geo.TransactionSignaturesLists
+	TSLs                *geo.TSLs
 }
 
 func (body *Body) SortInternalSequences() (err error) {
@@ -199,7 +199,7 @@ func (body *Body) UnmarshalBinary(data []byte) (err error) {
 		return
 	}
 
-	body.TSLs = &geo.TransactionSignaturesLists{}
+	body.TSLs = &geo.TSLs{}
 	err = body.TSLs.UnmarshalBinary(data[TSLsDataOffset:])
 	if err != nil {
 		return

@@ -5,67 +5,72 @@ import (
 	"geo-observers-blockchain/core/common"
 	"geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/common/types/transactions"
-	"geo-observers-blockchain/core/crypto/lamport"
 	"geo-observers-blockchain/core/utils"
 	"sort"
 )
 
+const (
+	ClaimMinBinarySize = common.TransactionUUIDSize + transactions.MembersMinBinarySize
+)
+
 type Claim struct {
-	TxUUID  *transactions.TransactionUUID
-	PubKeys *lamport.PubKeys
+	TxUUID  *transactions.TxID
+	Members *transactions.Members
 }
 
 func NewClaim() *Claim {
 	return &Claim{
-		TxUUID:  transactions.NewTransactionUUID(),
-		PubKeys: &lamport.PubKeys{},
+		TxUUID:  transactions.NewTxID(),
+		Members: &transactions.Members{},
 	}
 }
 
 func (claim *Claim) MarshalBinary() (data []byte, err error) {
-	if claim.TxUUID == nil || claim.PubKeys == nil {
+	if claim.TxUUID == nil || claim.Members == nil {
 		return nil, errors.NilInternalDataStructure
 	}
 
-	transactionUUIDBinary, err := claim.TxUUID.MarshalBinary()
+	txIDBinary, err := claim.TxID().MarshalBinary()
 	if err != nil {
 		return
 	}
 
-	keysBinary, err := claim.PubKeys.MarshalBinary()
+	membersBinary, err := claim.Members.MarshalBinary()
 	if err != nil {
 		return
 	}
 
-	data = utils.ChainByteSlices(transactionUUIDBinary, keysBinary)
+	data = utils.ChainByteSlices(txIDBinary, membersBinary)
 	return
 }
 
 func (claim *Claim) UnmarshalBinary(data []byte) (err error) {
-	const (
-		offsetUUIDData = 0
-		offsetKeysData = offsetUUIDData + common.TransactionUUIDSize
-
-		minDataLength = offsetKeysData + common.Uint16ByteSize
-	)
-
-	if len(data) < minDataLength {
+	if len(data) < ClaimMinBinarySize {
 		return errors.InvalidDataFormat
 	}
 
-	claim.TxUUID = transactions.NewTransactionUUID()
+	const (
+		offsetUUIDData    = 0
+		offsetMembersData = offsetUUIDData + common.TransactionUUIDSize
+	)
+
+	claim.TxUUID = transactions.NewTxID()
 	err = claim.TxUUID.UnmarshalBinary(data[:common.TransactionUUIDSize])
 	if err != nil {
 		return
 	}
 
-	claim.PubKeys = &lamport.PubKeys{}
-	err = claim.PubKeys.UnmarshalBinary(data[offsetKeysData:])
+	claim.Members = &transactions.Members{}
+	err = claim.Members.UnmarshalBinary(data[offsetMembersData:])
 	if err != nil {
 		return
 	}
 
 	return
+}
+
+func (claim *Claim) TxID() *transactions.TxID {
+	return claim.TxUUID
 }
 
 // --------------------------------------------------------------------------------------------------------------------

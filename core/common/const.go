@@ -6,11 +6,11 @@ import "time"
 const (
 	// Recommended value for production usage: 1024.
 	// Recommended value for development usage: 7.
-	ObserversMaxCount = 7
+	ObserversMaxCount = 4
 
 	// Recommended value for production usage: 768.
 	// Recommended value for development usage: 5.
-	ObserversConsensusCount = 5
+	ObserversConsensusCount = 2
 
 	// This period of time is delegated to the observer for block generation and distribution.
 	// It is expected, that block generation would be almost timeless,
@@ -29,8 +29,8 @@ const (
 	//
 	// Recommended value for production usage: 20 seconds.
 	// Recommended value for development usage: 1 second.
-	TickerSynchronisationTimeRange   = time.Second // * 20
-	ComposerSynchronisationTimeRange = time.Second // * 20
+	TickerSynchronisationTimeRange   = time.Second * 2 // * 20
+	ComposerSynchronisationTimeRange = time.Second * 2 // * 20
 
 	// This period of time is used as a buffer time window:
 	// during this time window observer does not accepts any external events or messages,

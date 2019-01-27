@@ -5,6 +5,7 @@ import (
 	"geo-observers-blockchain/core/common"
 	"geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/common/types/hash"
+	"geo-observers-blockchain/core/common/types/transactions"
 	"geo-observers-blockchain/core/network/communicator/observers/requests"
 	"geo-observers-blockchain/core/network/communicator/observers/responses"
 	"geo-observers-blockchain/core/network/external"
@@ -16,6 +17,7 @@ import (
 var (
 	// Specifies how often pool will try to broadcast
 	// its items to the external observers.
+	// todo: move to constants
 	kTimeoutItemsSynchronisation = time.Duration(time.Second * 2)
 )
 
@@ -130,13 +132,13 @@ func (h *Handler) BlockReadyInstances() (channel chan *instances, errors chan er
 }
 
 func (h *Handler) BlockReadyInstancesByHashes(
-	hashes []hash.SHA256Container) (channel chan *instances, errors chan error) {
+	hashes []hash.SHA256Container) (results chan *instances, errors chan error) {
 
-	channel = make(chan *instances, 1)
+	results = make(chan *instances, 1)
 	errors = make(chan error, 1)
 
 	h.internalEventsBus <- &EventBlockReadyInstancesByHashesRequest{
-		Instances: channel,
+		Instances: results,
 		Errors:    errors,
 		Hashes:    hashes,
 	}
@@ -150,6 +152,20 @@ func (h *Handler) DropInstances(hashes []hash.SHA256Container) (errors chan erro
 	h.internalEventsBus <- &EventItemsDroppingRequest{
 		Errors: errors,
 		Hashes: hashes,
+	}
+
+	return
+}
+
+func (h *Handler) ContainsInstance(
+	TxID *transactions.TxID) (results chan bool, errors chan error) {
+	errors = make(chan error, 1)
+	results = make(chan bool, 1)
+
+	h.internalEventsBus <- &EventInstanceIsPresentRequest{
+		Errors: errors,
+		Result: results,
+		TxID:   TxID,
 	}
 
 	return
@@ -175,6 +191,7 @@ func (h *Handler) processNewInstance(i instance, conf *external.Configuration) (
 	// sync it's items with the rest observers ASAP.
 	h.hasUnapprovedItems = true
 
+	h.log().WithField("PoolSize", len(h.pool.index)).Debug("Instance added")
 	return h.requestRecordBroadcast(record)
 }
 
@@ -310,6 +327,9 @@ func (h *Handler) processInternalEvent(event interface{}) {
 	case *EventItemsDroppingRequest:
 		h.dropItemsByHashes(event.(*EventItemsDroppingRequest))
 
+	case *EventInstanceIsPresentRequest:
+		h.containsInstance(event.(*EventInstanceIsPresentRequest))
+
 	default:
 		h.log().Error("Unexpected event type occurred: ", reflect.TypeOf(event).String())
 	}
@@ -351,6 +371,19 @@ func (h *Handler) dropItemsByHashes(event *EventItemsDroppingRequest) {
 	event.Errors <- nil
 }
 
+func (h *Handler) containsInstance(event *EventInstanceIsPresentRequest) {
+	for _, instance := range h.pool.index {
+		if instance.Instance.TxID().Compare(event.TxID) {
+			event.Result <- true
+			event.Errors <- nil
+			return
+		}
+	}
+
+	event.Result <- false
+	event.Errors <- nil
+}
+
 func (h *Handler) log() *log.Entry {
-	return log.WithFields(log.Fields{"prefix": "Pool Handler"})
+	return log.WithFields(log.Fields{"prefix": "Pool"})
 }

@@ -115,7 +115,7 @@ func (s *Sender) processRequestSending(request requests.Request, errors chan<- e
 	switch request.(type) {
 	case *requests.PoolInstanceBroadcast:
 		switch request.(*requests.PoolInstanceBroadcast).Instance.(type) {
-		case *geo.TransactionSignaturesList:
+		case *geo.TSL:
 			send(
 				constants.StreamTypeRequestTSLBroadcast,
 				request.(*requests.PoolInstanceBroadcast).DestinationObservers())

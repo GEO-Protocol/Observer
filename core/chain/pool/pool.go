@@ -5,12 +5,14 @@ import (
 	"geo-observers-blockchain/core/common"
 	"geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/common/types/hash"
+	"geo-observers-blockchain/core/common/types/transactions"
 	"time"
 )
 
 type instance interface {
 	encoding.BinaryMarshaler
 	encoding.BinaryUnmarshaler
+	TxID() *transactions.TxID
 }
 
 type instances struct {
@@ -74,6 +76,9 @@ func (pool *Pool) Add(instance instance) (record *Record, err error) {
 		// It must not be replaced by the new value, to prevent votes dropping.
 		err = errors.Collision
 		return
+
+	} else {
+		err = nil
 	}
 
 	record = &Record{

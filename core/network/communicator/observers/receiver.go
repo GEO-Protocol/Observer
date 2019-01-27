@@ -23,7 +23,7 @@ type Receiver struct {
 	OutgoingEventsConnectionClosed chan interface{}
 
 	Claims chan geo.Claim
-	TSLs   chan geo.TransactionSignaturesList
+	TSLs   chan geo.TSL
 	//BlockSignatures chan *chain.BlockSignatures
 	//BlockSignatures chan *messages.SignatureMessage
 	//BlocksProposed  chan *chain.ProposedBlockData
@@ -39,7 +39,7 @@ func NewReceiver() *Receiver {
 		OutgoingEventsConnectionClosed: make(chan interface{}, 1),
 
 		Claims: make(chan geo.Claim, ChannelBufferSize),
-		TSLs:   make(chan geo.TransactionSignaturesList, ChannelBufferSize),
+		TSLs:   make(chan geo.TSL, ChannelBufferSize),
 		//BlockSignatures: make(chan *chain.BlockSignatures, ChannelBufferSize),
 		//BlockSignatures: make(chan *messages.SignatureMessage, ChannelBufferSize),
 		//BlocksProposed:  make(chan *chain.ProposedBlockData, ChannelBufferSize),
@@ -266,5 +266,5 @@ func (r *Receiver) logIngress(bytesReceived int, conn net.Conn) {
 }
 
 func (r *Receiver) log() *log.Entry {
-	return log.WithFields(log.Fields{"prefix": "Network/Observers/Receiver"})
+	return log.WithFields(log.Fields{"prefix": "Network/Observers/Communicator"})
 }

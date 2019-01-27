@@ -10,7 +10,7 @@ import (
 )
 
 func TestTransactionSignaturesList_MarshalBinaryEmptyInternal(t *testing.T) {
-	tsl := &TransactionSignaturesList{}
+	tsl := &TSL{}
 	_, err := tsl.MarshalBinary()
 	if err != common.ErrNilInternalDataStructure {
 		t.Fatal()
@@ -18,7 +18,7 @@ func TestTransactionSignaturesList_MarshalBinaryEmptyInternal(t *testing.T) {
 }
 
 func TestTransactionSignaturesList_UnmarshalBinary_EmptyData(t *testing.T) {
-	tsl := NewTransactionSignaturesList()
+	tsl := NewTSL()
 	err := tsl.UnmarshalBinary([]byte{})
 	if err != common.ErrInvalidDataFormat {
 		t.Fatal()
@@ -26,7 +26,7 @@ func TestTransactionSignaturesList_UnmarshalBinary_EmptyData(t *testing.T) {
 }
 
 func TestTransactionSignaturesList_UnmarshalBinary_TooShortData(t *testing.T) {
-	tsl := NewTransactionSignaturesList()
+	tsl := NewTSL()
 	err := tsl.UnmarshalBinary([]byte{0, 0, 0, 0, 0, 0})
 	if err != common.ErrInvalidDataFormat {
 		t.Fatal()
@@ -39,7 +39,7 @@ func TestTransactionSignaturesList_UnmarshalBinary_TooShortData(t *testing.T) {
 //--------------------------------------------------------------------------------------------------------------------
 
 func TestTransactionSignaturesLists_Add_NilParameter(t *testing.T) {
-	tsls := &TransactionSignaturesLists{}
+	tsls := &TSLs{}
 	err := tsls.Add(nil)
 	if err != common.ErrNilParameter {
 		t.Fatal()
@@ -47,28 +47,28 @@ func TestTransactionSignaturesLists_Add_NilParameter(t *testing.T) {
 }
 
 func TestTransactionSignaturesLists_Add_Max(t *testing.T) {
-	tsls := &TransactionSignaturesLists{}
-	for i := 0; i < TransactionSignaturesListsMaxCount; i++ {
-		err := tsls.Add(NewTransactionSignaturesList())
+	tsls := &TSLs{}
+	for i := 0; i < TSLsMaxCount; i++ {
+		err := tsls.Add(NewTSL())
 		if err != nil {
 			t.Fatal()
 		}
 	}
 
-	err := tsls.Add(NewTransactionSignaturesList())
+	err := tsls.Add(NewTSL())
 	if err != common.ErrMaxCountReached {
 		t.Fatal("tsls list must restrict max count of elements")
 	}
 }
 
 func TestTransactionSignaturesLists_Count(t *testing.T) {
-	tsls := &TransactionSignaturesLists{}
+	tsls := &TSLs{}
 	if tsls.Count() != 0 {
 		t.Fatal()
 	}
 
-	for i := 0; i < TransactionSignaturesListsMaxCount; i++ {
-		_ = tsls.Add(NewTransactionSignaturesList())
+	for i := 0; i < TSLsMaxCount; i++ {
+		_ = tsls.Add(NewTSL())
 		if tsls.Count() != uint16(i+1) {
 			t.Fatal()
 		}
@@ -78,8 +78,8 @@ func TestTransactionSignaturesLists_Count(t *testing.T) {
 // Creates empty transactions signatures list.
 // Serializes it, deserializes it back and then checks data equality.
 func TestTransactionSignaturesLists_MarshallBinary_NoData(t *testing.T) {
-	tsls := &TransactionSignaturesLists{}
-	restoredTSLs := &TransactionSignaturesLists{}
+	tsls := &TSLs{}
+	restoredTSLs := &TSLs{}
 
 	binary, _ := tsls.MarshalBinary()
 	_ = restoredTSLs.UnmarshalBinary(binary)
@@ -105,7 +105,7 @@ func TestTransactionSignaturesLists_MarshallBinary_NoData(t *testing.T) {
 func TestTransactionSignaturesLists_MarshallBinary_OneTSL_1024Signatures(t *testing.T) {
 
 	// Reference data initialisation.
-	tsl := NewTransactionSignaturesList()
+	tsl := NewTSL()
 	tsl.TxUUID.Bytes = [16]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 1, 2, 3, 4, 5, 6}
 	for i := 0; i < 1024; i++ {
 		sig := &lamport.Signature{}
@@ -114,16 +114,16 @@ func TestTransactionSignaturesLists_MarshallBinary_OneTSL_1024Signatures(t *test
 			t.Fatal()
 		}
 
-		_ = tsl.Signatures.Add(sig)
+		_ = tsl.Members.Add(sig)
 	}
 
-	tsls := &TransactionSignaturesLists{}
+	tsls := &TSLs{}
 	_ = tsls.Add(tsl)
 
 	// Marshalling.
 	binary, _ := tsls.MarshalBinary()
 
-	restoredTSLs := &TransactionSignaturesLists{}
+	restoredTSLs := &TSLs{}
 	_ = restoredTSLs.UnmarshalBinary(binary)
 
 	// Checks
@@ -141,14 +141,14 @@ func TestTransactionSignaturesLists_MarshallBinary_OneTSL_1024Signatures(t *test
 	}
 
 	// At count
-	pubKeysCountAreEqual := restoredTSLs.At[0].Signatures.Count() == restoredTSLs.At[0].Signatures.Count()
+	pubKeysCountAreEqual := restoredTSLs.At[0].Members.Count() == restoredTSLs.At[0].Members.Count()
 	if !pubKeysCountAreEqual {
 		t.Fatal()
 	}
 
 	// At data
-	for i, sig := range tsls.At[0].Signatures.At {
-		restoredSig := restoredTSLs.At[0].Signatures.At[i]
+	for i, sig := range tsls.At[0].Members.At {
+		restoredSig := restoredTSLs.At[0].Members.At[i]
 		sigNIsEqual := bytes.Compare(sig.Bytes[:], restoredSig.Bytes[:]) == 0
 		if !sigNIsEqual {
 			t.Fatal()
@@ -163,9 +163,9 @@ func TestTransactionSignaturesLists_MarshallBinary_OneTSL_1024Signatures(t *test
 func TestTransactionSignaturesLists_MarshallBinary_MaxElementsCount(t *testing.T) {
 
 	// Reference data initialisation.
-	TSLs := &TransactionSignaturesLists{}
-	for j := 0; j < TransactionSignaturesListsMaxCount; j++ {
-		TSL := NewTransactionSignaturesList()
+	TSLs := &TSLs{}
+	for j := 0; j < TSLsMaxCount; j++ {
+		TSL := NewTSL()
 		_, err := rand.Read(TSL.TxUUID.Bytes[:])
 		if err != nil {
 			t.Fatal()
@@ -176,7 +176,7 @@ func TestTransactionSignaturesLists_MarshallBinary_MaxElementsCount(t *testing.T
 		if err != nil {
 			t.Fatal()
 		}
-		_ = TSL.Signatures.Add(sig)
+		_ = TSL.Members.Add(sig)
 
 		err = TSLs.Add(TSL)
 		if err != nil {
@@ -187,11 +187,11 @@ func TestTransactionSignaturesLists_MarshallBinary_MaxElementsCount(t *testing.T
 	// Marshalling.
 	binary, _ := TSLs.MarshalBinary()
 
-	restoredTSLs := &TransactionSignaturesLists{}
+	restoredTSLs := &TSLs{}
 	_ = restoredTSLs.UnmarshalBinary(binary)
 
 	// Checks
-	if restoredTSLs.Count() != TransactionSignaturesListsMaxCount {
+	if restoredTSLs.Count() != TSLsMaxCount {
 		t.Fatal()
 	}
 	if restoredTSLs.Count() != TSLs.Count() {
@@ -207,8 +207,8 @@ func TestTransactionSignaturesLists_MarshallBinary_MaxElementsCount(t *testing.T
 			t.Fatal()
 		}
 
-		for j, sig := range restoredTSL.Signatures.At {
-			sigNIsEqual := bytes.Compare(sig.Bytes[:], TSLs.At[i].Signatures.At[j].Bytes[:]) == 0
+		for j, sig := range restoredTSL.Members.At {
+			sigNIsEqual := bytes.Compare(sig.Bytes[:], TSLs.At[i].Members.At[j].Bytes[:]) == 0
 			if !sigNIsEqual {
 				t.Fatal()
 			}

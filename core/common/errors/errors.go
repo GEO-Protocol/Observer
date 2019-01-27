@@ -76,6 +76,7 @@ var (
 	ExpectationFailed   = errors.New("expecteation failed")
 	NoConsensus         = errors.New("no consensus")
 	ValidationFailed    = errors.New("validation failed")
+	TimeoutFired        = errors.New("timeout fired ")
 
 	// Memory error
 	InvalidCopyOperation     = errors.New("invalid copy operation")
@@ -93,6 +94,7 @@ var (
 	// Sequences
 	EmptySequence    = errors.New("empty sequence")
 	NotFound         = errors.New("not found")
+	NoData           = errors.New("no data")
 	TooLargeSequence = errors.New("too large sequence")
 	Collision        = errors.New("collision detected")
 
