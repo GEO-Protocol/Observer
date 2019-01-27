@@ -21,7 +21,6 @@ import (
 )
 
 type Core struct {
-	settings              *settings.Settings
 	keystore              *keystore.KeyStore
 	timer                 *ticker.Ticker
 	observersConfReporter *external.Reporter
@@ -34,24 +33,23 @@ type Core struct {
 	composer              *chain.Composer
 }
 
-func New(conf *settings.Settings) (core *Core, err error) {
+func New() (core *Core, err error) {
 	k, err := keystore.New()
 	if err != nil {
 		return
 	}
 
-	reporter := external.NewReporter(conf, k)
+	reporter := external.NewReporter(k)
 	poolTSLs := pool.NewHandler(reporter)
 	poolClaims := pool.NewHandler(reporter)
-	composer := chain.NewComposer(reporter, conf)
-	producer, err := chain.NewProducer(conf, reporter, k, poolTSLs, poolClaims, composer)
+	composer := chain.NewComposer(reporter)
+	producer, err := chain.NewProducer(reporter, k, poolTSLs, poolClaims, composer)
 
 	core = &Core{
-		settings:              conf,
 		keystore:              k,
-		timer:                 ticker.New(conf, reporter),
+		timer:                 ticker.New(reporter),
 		observersConfReporter: reporter,
-		senderObservers:       observersNet.NewSender(conf, reporter),
+		senderObservers:       observersNet.NewSender(reporter),
 		receiverObservers:     observersNet.NewReceiver(),
 		receiverGEONodes:      geoNet.New(),
 		poolClaims:            poolClaims,
@@ -84,20 +82,20 @@ func (c *Core) Run() {
 
 func (c *Core) initNetwork(errors chan error) {
 	go c.receiverGEONodes.Run(
-		c.settings.Nodes.Network.Host,
-		c.settings.Nodes.Network.Port,
+		settings.Conf.Nodes.Network.Host,
+		settings.Conf.Nodes.Network.Port,
 		errors)
 	c.exitIfError(errors)
 
 	go c.receiverObservers.Run(
-		c.settings.Observers.Network.Host,
-		c.settings.Observers.Network.Port,
+		settings.Conf.Observers.Network.Host,
+		settings.Conf.Observers.Network.Port,
 		errors)
 	c.exitIfError(errors)
 
 	go c.senderObservers.Run(
-		c.settings.Observers.Network.Host,
-		c.settings.Observers.Network.Port,
+		settings.Conf.Observers.Network.Host,
+		settings.Conf.Observers.Network.Port,
 		errors)
 
 	c.exitIfError(errors)

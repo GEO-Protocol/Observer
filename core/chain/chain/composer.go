@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"geo-observers-blockchain/core/chain/block"
-	"geo-observers-blockchain/core/common"
 	"geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/common/types/hash"
 	"geo-observers-blockchain/core/network/communicator/observers/requests"
@@ -36,10 +35,9 @@ type Composer struct {
 	internalEventsBus chan interface{}
 
 	observers *external.Reporter
-	settings  *settings.Settings
 }
 
-func NewComposer(reporter *external.Reporter, settings *settings.Settings) (composer *Composer) {
+func NewComposer(reporter *external.Reporter) (composer *Composer) {
 	composer = &Composer{
 		OutgoingEventsSynchronizationRequested: make(chan *EventSynchronizationRequested, 1),
 		OutgoingEventsSynchronizationFinished:  make(chan *EventSynchronizationFinished, 1),
@@ -50,7 +48,6 @@ func NewComposer(reporter *external.Reporter, settings *settings.Settings) (comp
 		internalEventsBus: make(chan interface{}, 1),
 
 		observers: reporter,
-		settings:  settings,
 	}
 	return
 }
@@ -152,7 +149,7 @@ func (c *Composer) processNodeSynchronisation(chain *Chain) (err errors.E) {
 		return
 	}
 
-	if c.settings.Debug {
+	if settings.Conf.Debug {
 		c.log().Debug("Synchronisation is done successfully.")
 	}
 	return
@@ -170,7 +167,7 @@ func (c *Composer) requestActualChainState(topBlock *block.Signed) (err errors.E
 		return
 	}
 
-	time.Sleep(common.ComposerSynchronisationTimeRange)
+	time.Sleep(settings.ComposerSynchronisationTimeRange)
 	return
 }
 
@@ -249,7 +246,7 @@ func (c *Composer) processSync(actualChain *Chain, observersIndexes []uint16,
 	//       if rewrite s allowed - do a full sync,
 	//       otherwise - report error and give detailed instructions what to do.
 
-	allowChainRewrite := len(observersIndexes) >= common.ObserversConsensusCount
+	allowChainRewrite := len(observersIndexes) >= settings.ObserversConsensusCount
 	if !allowChainRewrite {
 		// todo: lock segment of file
 
@@ -333,7 +330,7 @@ func (c *Composer) rsyncParams(observersIndexes []uint16, tmpCopyFilename string
 
 	module := "chain"
 	// todo: drop it on beta release
-	if c.settings.Debug {
+	if settings.Conf.Debug {
 		module = module + fmt.Sprint(observersIndexes[index])
 	}
 
@@ -468,7 +465,7 @@ func (c *Composer) dropTemporaryDataIfAny() (e errors.E) {
 }
 
 func (c *Composer) logError(err errors.E, message string) {
-	if c.settings.Debug {
+	if settings.Conf.Debug {
 		c.log().WithField("StackTrace", err.StackTrace()).Error(message, ", ", err.Error())
 	} else {
 		c.log().Error(message, ", ", err.Error())

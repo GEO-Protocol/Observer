@@ -3,6 +3,7 @@ package ecdsa
 import (
 	"geo-observers-blockchain/core/common"
 	"geo-observers-blockchain/core/common/errors"
+	"geo-observers-blockchain/core/settings"
 	"geo-observers-blockchain/core/utils"
 	"math/big"
 )
@@ -74,8 +75,8 @@ func (s *Signature) UnmarshalBinary(data []byte) (err error) {
 
 //---------------------------------------------------------------------------------------------------------------------
 
-const (
-	SIGNATURES_MAX_COUNT = common.ObserversMaxCount
+var (
+	SignaturesMaxCount = settings.ObserversMaxCount
 )
 
 type Signatures struct {
@@ -87,7 +88,7 @@ func (s *Signatures) Count() uint16 {
 }
 
 func (s *Signatures) Add(sig Signature) error {
-	if s.Count() < SIGNATURES_MAX_COUNT {
+	if s.Count() < uint16(SignaturesMaxCount) {
 		s.At = append(s.At, sig)
 		return nil
 	}

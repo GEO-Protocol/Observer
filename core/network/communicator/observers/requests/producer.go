@@ -4,6 +4,7 @@ import (
 	"geo-observers-blockchain/core/chain/block"
 	"geo-observers-blockchain/core/chain/signatures"
 	"geo-observers-blockchain/core/common"
+	"geo-observers-blockchain/core/settings"
 	"geo-observers-blockchain/core/utils"
 )
 
@@ -81,6 +82,6 @@ func (r *BlockSignaturesBroadcast) UnmarshalBinary(data []byte) (err error) {
 		return
 	}
 
-	r.Signatures = signatures.NewIndexedObserversSignatures(common.ObserversMaxCount)
+	r.Signatures = signatures.NewIndexedObserversSignatures(settings.ObserversMaxCount)
 	return r.Signatures.UnmarshalBinary(data[common.Uint16ByteSize:])
 }

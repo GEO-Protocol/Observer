@@ -3,6 +3,7 @@ package lamport
 import (
 	"geo-observers-blockchain/core/common"
 	"geo-observers-blockchain/core/common/errors"
+	"geo-observers-blockchain/core/settings"
 	"geo-observers-blockchain/core/utils"
 )
 
@@ -34,8 +35,8 @@ func (h *PubKey) UnmarshalBinary(data []byte) error {
 
 // --------------------------------------------------------------------------------------------------------------------
 
-const (
-	PubKeysMaxCount = common.GEOTransactionMaxParticipantsCount
+var (
+	PubKeysMaxCount = settings.GEOTransactionMaxParticipantsCount
 )
 
 type PubKeys struct {
@@ -47,7 +48,7 @@ func (p *PubKeys) Add(key *PubKey) error {
 		return errors.NilParameter
 	}
 
-	if p.Count() < PubKeysMaxCount {
+	if p.Count() < uint16(PubKeysMaxCount) {
 		p.At = append(p.At, key)
 		return nil
 	}

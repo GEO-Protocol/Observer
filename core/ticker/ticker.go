@@ -1,7 +1,6 @@
 package ticker
 
 import (
-	"geo-observers-blockchain/core/common"
 	errors2 "geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/network/communicator/observers/requests"
 	"geo-observers-blockchain/core/network/communicator/observers/responses"
@@ -36,8 +35,6 @@ type Ticker struct {
 	OutgoingResponsesTimeFrame chan *responses.TimeFrame
 	IncomingResponsesTimeFrame chan *responses.TimeFrame
 
-	settings *settings.Settings
-
 	// Internal events bus is used for controlling internal events loop.
 	// For example, in case if synchronisation with external observers is finished,
 	// and ticker might be started.
@@ -70,7 +67,7 @@ type Ticker struct {
 	frame *EventTimeFrameEnd
 }
 
-func New(settings *settings.Settings, reporter *external.Reporter) *Ticker {
+func New(reporter *external.Reporter) *Ticker {
 	initialConfiguration, _ := reporter.GetCurrentConfiguration()
 
 	return &Ticker{
@@ -83,13 +80,11 @@ func New(settings *settings.Settings, reporter *external.Reporter) *Ticker {
 
 		// On synchronization stage,
 		// ticker should be able to collect up to MAX OBSERVERS count of responses.
-		IncomingResponsesTimeFrame: make(chan *responses.TimeFrame, common.ObserversMaxCount),
+		IncomingResponsesTimeFrame: make(chan *responses.TimeFrame, settings.ObserversMaxCount),
 		IncomingRequestsTimeFrames: make(chan *requests.SynchronisationTimeFrames, 1),
 
 		// Internal events bus is used to control and to interrupt internal events loop.
 		internalEventsBus: make(chan interface{}, 1),
-
-		settings: settings,
 
 		confReporter: reporter,
 
@@ -143,10 +138,10 @@ func (t *Ticker) Run(errors chan error) {
 
 	var (
 		kMinimalTimeFramesExchangeTimeoutSeconds = 2
-		kMinimalAppropriateTimeoutSeconds        = int(common.AverageBlockGenerationTimeRange.Seconds()) -
+		kMinimalAppropriateTimeoutSeconds        = int(settings.AverageBlockGenerationTimeRange.Seconds()) -
 			kMinimalTimeFramesExchangeTimeoutSeconds
 	)
-	if int(common.TickerSynchronisationTimeRange.Seconds()) >= kMinimalAppropriateTimeoutSeconds {
+	if int(settings.TickerSynchronisationTimeRange.Seconds()) >= kMinimalAppropriateTimeoutSeconds {
 		// todo: replace panic
 		panic(ErrInvalidSynchronisationTimeout)
 	}
@@ -168,7 +163,7 @@ func (t *Ticker) Run(errors chan error) {
 }
 
 func (t *Ticker) syncWithOtherObservers() {
-	t.synchronisationDeadlineTimestamp = time.Now().Add(common.TickerSynchronisationTimeRange)
+	t.synchronisationDeadlineTimestamp = time.Now().Add(settings.TickerSynchronisationTimeRange)
 
 	setNextTick := func(offset time.Duration) {
 		t.nextFrameTimestamp = time.Now().Add(offset)
@@ -184,7 +179,7 @@ func (t *Ticker) syncWithOtherObservers() {
 			}
 
 			time.Sleep(time.Millisecond * 50)
-			if len(t.IncomingResponsesTimeFrame) == common.ObserversMaxCount {
+			if len(t.IncomingResponsesTimeFrame) == settings.ObserversMaxCount {
 				// There is no reason to wait longer.
 				// All responses has been collected.
 				break
@@ -208,7 +203,7 @@ func (t *Ticker) syncWithOtherObservers() {
 
 		// Use default block generation time range.
 		t.frame = &EventTimeFrameEnd{Index: nextFrameIndex}
-		setNextTick(common.AverageBlockGenerationTimeRange)
+		setNextTick(settings.AverageBlockGenerationTimeRange)
 
 	} else {
 		t.log().WithFields(
@@ -276,7 +271,7 @@ func (t *Ticker) processTimeFrameRequest(request *requests.SynchronisationTimeFr
 
 func (t *Ticker) processTick() {
 	nextFrameNumber := t.frame.Index + 1
-	if nextFrameNumber == common.ObserversMaxCount {
+	if nextFrameNumber == uint16(settings.ObserversMaxCount) {
 		nextFrameNumber = 0
 	}
 
@@ -286,7 +281,7 @@ func (t *Ticker) processTick() {
 	t.frame = &EventTimeFrameEnd{
 		Index:               nextFrameNumber,
 		Conf:                t.frame.Conf,
-		FinalStageTimestamp: time.Now().Add(-common.BlockGenerationSilencePeriod),
+		FinalStageTimestamp: time.Now().Add(-settings.BlockGenerationSilencePeriod),
 	}
 
 	select {
@@ -308,7 +303,7 @@ func (t *Ticker) nextFrameTimeLeft() (d time.Duration) {
 	timeLeft := t.nextFrameTimestamp.Sub(time.Now())
 	if timeLeft <= 0 {
 		t.nextFrameTimestamp = time.Now().Add(
-			common.AverageBlockGenerationTimeRange).Add(
+			settings.AverageBlockGenerationTimeRange).Add(
 			timeLeft * time.Nanosecond * -1)
 
 		return t.nextFrameTimeLeft()
@@ -370,7 +365,7 @@ func (t *Ticker) processMajorityOfFrameResponses() (
 		timeOffset := now.Sub(vote.Received).Nanoseconds()
 
 		var correctedNanosecondsLeft int64 = 0
-		correctedNanosecondsLeft = int64(common.AverageBlockGenerationTimeRange) +
+		correctedNanosecondsLeft = int64(settings.AverageBlockGenerationTimeRange) +
 			int64(vote.NanosecondsLeft) -
 			int64(timeOffset)
 
@@ -393,12 +388,12 @@ func (t *Ticker) processMajorityOfFrameResponses() (
 	timeOffsetNanoseconds = t.processMajorityAndCalculateAverageNextFrameTTL(*m)
 
 	frameOffset := 0
-	if timeOffsetNanoseconds > uint64(common.AverageBlockGenerationTimeRange.Nanoseconds()) {
+	if timeOffsetNanoseconds > uint64(settings.AverageBlockGenerationTimeRange.Nanoseconds()) {
 		frameOffset = 1
 	}
 
 	nextFrameIndex = topFrameIndex + uint16(frameOffset)
-	if nextFrameIndex >= common.ObserversMaxCount {
+	if nextFrameIndex >= uint16(settings.ObserversMaxCount) {
 		nextFrameIndex = 0
 	}
 

@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/crypto/keystore"
-	"geo-observers-blockchain/core/settings"
 	"io/ioutil"
 	"math"
 	"os"
@@ -21,13 +20,11 @@ var (
 
 // todo: comments
 type Reporter struct {
-	settings *settings.Settings
 	keystore *keystore.KeyStore
 }
 
-func NewReporter(settings *settings.Settings, keystore *keystore.KeyStore) (reporter *Reporter) {
+func NewReporter(keystore *keystore.KeyStore) (reporter *Reporter) {
 	reporter = &Reporter{
-		settings: settings,
 		keystore: keystore,
 	}
 

@@ -4,6 +4,7 @@ import (
 	"geo-observers-blockchain/core/common"
 	"geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/common/types/hash"
+	"geo-observers-blockchain/core/settings"
 	"geo-observers-blockchain/core/utils"
 )
 
@@ -32,7 +33,7 @@ type Digest struct {
 
 // todo: tests needed
 func (c *Digest) MarshalBinary() (data []byte, err error) {
-	if c.AuthorObserverIndex >= common.ObserversMaxCount {
+	if c.AuthorObserverIndex >= uint16(settings.ObserversMaxCount) {
 		err = errors.ExpectationFailed
 		return
 	}
