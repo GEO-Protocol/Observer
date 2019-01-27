@@ -9,7 +9,7 @@ import (
 	"sort"
 )
 
-const (
+var (
 	ClaimMinBinarySize = common.TransactionUUIDSize + transactions.MembersMinBinarySize
 )
 

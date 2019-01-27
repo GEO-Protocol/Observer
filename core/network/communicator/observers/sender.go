@@ -33,21 +33,17 @@ type Sender struct {
 	OutgoingRequests  chan requests.Request
 	OutgoingResponses chan responses.Response
 	IncomingEvents    chan interface{}
-
-	settings    *settings.Settings
-	reporter    *external.Reporter
-	connections *ConnectionsMap
+	reporter          *external.Reporter
+	connections       *ConnectionsMap
 }
 
-func NewSender(conf *settings.Settings, observersConfReporter *external.Reporter) *Sender {
+func NewSender(observersConfReporter *external.Reporter) *Sender {
 	return &Sender{
 		OutgoingRequests:  make(chan requests.Request, 16),
 		OutgoingResponses: make(chan responses.Response, 16),
 		IncomingEvents:    make(chan interface{}, 1),
-
-		settings:    conf,
-		reporter:    observersConfReporter,
-		connections: NewConnectionsMap(time.Minute * 10),
+		reporter:          observersConfReporter,
+		connections:       NewConnectionsMap(time.Minute * 10),
 	}
 }
 
@@ -239,8 +235,8 @@ func (s *Sender) sendDataToObservers(data []byte, observersIndexes []uint16, err
 			// If not debug - prevent sending the data to itself.
 			// In debug mode it might be useful to send blocks to itself,
 			// to test whole network cycle in one executable process.
-			if observer.Host == s.settings.Observers.Network.Host {
-				if observer.Port == s.settings.Observers.Network.Port {
+			if observer.Host == settings.Conf.Observers.Network.Host {
+				if observer.Port == settings.Conf.Observers.Network.Port {
 					continue
 				}
 			}
@@ -312,12 +308,12 @@ func (s *Sender) sendDataToObserver(observer *external.Observer, data []byte) (e
 		return ErrEmptyData
 	}
 
-	//if !s.settings.Debug {
+	//if !settings.Conf.Debug {
 	// If not debug - prevent sending the data to itself.
 	// In debug mode it might be useful to send blocks to itself,
 	// to test whole network cycle in one executable process.
-	if observer.Host == s.settings.Observers.Network.Host {
-		if observer.Port == s.settings.Observers.Network.Port {
+	if observer.Host == settings.Conf.Observers.Network.Host {
+		if observer.Port == settings.Conf.Observers.Network.Port {
 			return ErrCycleDataSending
 		}
 	}
@@ -370,7 +366,7 @@ func (s *Sender) connectToObserver(o *external.Observer) (connection *Connection
 		return nil, ErrObserverConnectionRefused
 	}
 
-	if s.settings.Debug {
+	if settings.Conf.Debug {
 		s.log().WithFields(log.Fields{
 			"Host": o.Host,
 			"Port": o.Port,

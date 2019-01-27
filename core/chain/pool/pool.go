@@ -2,10 +2,10 @@ package pool
 
 import (
 	"encoding"
-	"geo-observers-blockchain/core/common"
 	"geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/common/types/hash"
 	"geo-observers-blockchain/core/common/types/transactions"
+	"geo-observers-blockchain/core/settings"
 	"time"
 )
 
@@ -23,7 +23,7 @@ type Record struct {
 	Instance instance
 
 	//Approves collected from external observers.
-	Approves [common.ObserversMaxCount]bool
+	Approves [settings.KObserversMaxCount]bool
 
 	// Time of last attempt to send this Record to the external observers.
 	LastSyncAttempt time.Time
@@ -38,13 +38,13 @@ func (r *Record) IsMajorityApprovesCollected() bool {
 	for _, vote := range r.Approves {
 		if vote == true {
 			positiveVotesPresent++
-			if positiveVotesPresent >= common.ObserversConsensusCount {
+			if positiveVotesPresent >= settings.ObserversConsensusCount {
 				return true
 			}
 
 		} else {
 			negativeVotesPresent++
-			if negativeVotesPresent >= common.ObserversMaxCount-common.ObserversConsensusCount {
+			if negativeVotesPresent >= settings.ObserversMaxCount-settings.ObserversConsensusCount {
 				return false
 			}
 		}

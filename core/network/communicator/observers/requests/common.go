@@ -1,7 +1,7 @@
 package requests
 
 import (
-	"geo-observers-blockchain/core/common"
+	"geo-observers-blockchain/core/settings"
 	"geo-observers-blockchain/core/utils"
 )
 
@@ -15,7 +15,7 @@ type request struct {
 }
 
 func newRequest(destinationObservers []uint16) request {
-	if len(destinationObservers) == common.ObserversMaxCount {
+	if len(destinationObservers) == settings.ObserversMaxCount {
 		return request{}
 	}
 

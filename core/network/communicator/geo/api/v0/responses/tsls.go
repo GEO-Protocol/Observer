@@ -40,7 +40,7 @@ func (response *TSLIsPresent) UnmarshalBinary(data []byte) (err error) {
 
 // --------------------------------------------------------------------------------------------------------------------
 
-const (
+var (
 	TSLGetMinBinarySize = geo.TSLMinBinarySize + 1
 )
 

@@ -3,10 +3,10 @@ package chain
 import (
 	"geo-observers-blockchain/core/chain/block"
 	"geo-observers-blockchain/core/chain/signatures"
-	"geo-observers-blockchain/core/common"
 	"geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/common/types/transactions"
 	"geo-observers-blockchain/core/geo"
+	"geo-observers-blockchain/core/settings"
 	"geo-observers-blockchain/core/storage"
 	"geo-observers-blockchain/core/utils"
 )
@@ -195,7 +195,7 @@ func (chain *Chain) GenerateGenesisBlock() (b *block.Signed) {
 			Claims:              &geo.Claims{},
 			TSLs:                &geo.TSLs{},
 		},
-		Signatures: signatures.NewIndexedObserversSignatures(common.ObserversMaxCount),
+		Signatures: signatures.NewIndexedObserversSignatures(settings.ObserversMaxCount),
 	}
 }
 

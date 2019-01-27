@@ -11,15 +11,15 @@ func main() {
 	PrintLogo()
 	PrintVersionDigest()
 
-	conf, err := settings.LoadSettings()
+	err := settings.LoadSettings()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	logfile := logger.InitLogger(conf)
+	logfile := logger.InitLogger()
 	defer logfile.Close()
 
-	c, err := core.New(conf)
+	c, err := core.New()
 	if err != nil {
 		log.Fatal(err)
 	}

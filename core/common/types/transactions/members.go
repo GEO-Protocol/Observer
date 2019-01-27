@@ -3,11 +3,12 @@ package transactions
 import (
 	"geo-observers-blockchain/core/common"
 	"geo-observers-blockchain/core/common/errors"
+	"geo-observers-blockchain/core/settings"
 	"geo-observers-blockchain/core/utils"
 )
 
-const (
-	MembersMaxCount      = common.GEOTransactionMaxParticipantsCount
+var (
+	MembersMaxCount      = settings.GEOTransactionMaxParticipantsCount
 	MembersMinBinarySize = common.Uint16ByteSize + MemberBinarySize
 )
 
@@ -20,7 +21,7 @@ func (members *Members) Add(member *Member) error {
 		return errors.NilParameter
 	}
 
-	if members.Count() < MembersMaxCount {
+	if members.Count() < uint16(MembersMaxCount) {
 		members.At = append(members.At, member)
 		return nil
 	}
@@ -68,7 +69,7 @@ func (members *Members) UnmarshalBinary(data []byte) (err error) {
 		return
 	}
 
-	if totalMembersCount > MembersMaxCount {
+	if totalMembersCount > uint16(MembersMaxCount) {
 		return errors.InvalidDataFormat
 	}
 

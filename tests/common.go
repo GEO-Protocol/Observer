@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-const Debug = false
+const Debug = true
 
 // LaunchTestObserver spawns internal observer process for testing purposes.
 func LaunchTestObserver() (err error) {

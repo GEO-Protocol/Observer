@@ -23,7 +23,7 @@ func TestSignature_UnmarshalBinary_TooShortData(t *testing.T) {
 // --------------------------------------------------------------------------------------------------------------------
 func TestSignatures_Add_Max(t *testing.T) {
 	signatures := &Signatures{}
-	for i := 0; i < SIGNATURES_MAX_COUNT; i++ {
+	for i := 0; i < SignaturesMaxCount; i++ {
 		err := signatures.Add(Signature{})
 		if err != nil {
 			t.Fatal()
@@ -42,7 +42,7 @@ func TestSignatures_Count(t *testing.T) {
 		t.Fatal()
 	}
 
-	for i := 0; i < SIGNATURES_MAX_COUNT; i++ {
+	for i := 0; i < SignaturesMaxCount; i++ {
 		_ = signatures.Add(Signature{})
 		if signatures.Count() != uint16(i+1) {
 			t.Fatal()
@@ -113,7 +113,7 @@ func TestSignatures_MarshallBinary_MaxElementsCount(t *testing.T) {
 
 	// Reference data initialisation.
 	signatures := &Signatures{}
-	for j := 0; j < SIGNATURES_MAX_COUNT; j++ {
+	for j := 0; j < SignaturesMaxCount; j++ {
 		sig := Signature{}
 		sig.S = big.NewInt(rand.Int63())
 		sig.R = big.NewInt(rand.Int63())
@@ -131,7 +131,7 @@ func TestSignatures_MarshallBinary_MaxElementsCount(t *testing.T) {
 	_ = restoredSignatures.UnmarshalBinary(binary)
 
 	// Checks
-	if restoredSignatures.Count() != SIGNATURES_MAX_COUNT {
+	if restoredSignatures.Count() != SignaturesMaxCount {
 		t.Fatal()
 	}
 	if restoredSignatures.Count() != signatures.Count() {

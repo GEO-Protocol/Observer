@@ -6,7 +6,6 @@ import (
 	"geo-observers-blockchain/core/chain/block"
 	"geo-observers-blockchain/core/chain/pool"
 	"geo-observers-blockchain/core/chain/signatures"
-	"geo-observers-blockchain/core/common"
 	"geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/common/types/hash"
 	"geo-observers-blockchain/core/crypto/keystore"
@@ -53,7 +52,6 @@ type Producer struct {
 	// Internal interface
 	IncomingEventTimeFrameEnded chan *ticker.EventTimeFrameEnd
 
-	settings   *settings.Settings
 	keystore   *keystore.KeyStore
 	reporter   *external.Reporter
 	poolTSLs   *pool.Handler
@@ -65,15 +63,15 @@ type Producer struct {
 }
 
 func NewProducer(
-	conf *settings.Settings, reporter *external.Reporter,
+	reporter *external.Reporter,
 	keystore *keystore.KeyStore, poolTSLs, poolClaims *pool.Handler, composer *Composer) (producer *Producer, err error) {
 
 	producer = &Producer{
 		// Observers interface
 		OutgoingRequestsCandidateDigestBroadcast: make(chan *requests.CandidateDigestBroadcast, 1),
-		IncomingRequestsCandidateDigest:          make(chan *requests.CandidateDigestBroadcast, common.ObserversMaxCount-1),
+		IncomingRequestsCandidateDigest:          make(chan *requests.CandidateDigestBroadcast, settings.ObserversMaxCount-1),
 		OutgoingResponsesCandidateDigestApprove:  make(chan *responses.CandidateDigestApprove, 1),
-		IncomingResponsesCandidateDigestApprove:  make(chan *responses.CandidateDigestApprove, common.ObserversMaxCount-1),
+		IncomingResponsesCandidateDigestApprove:  make(chan *responses.CandidateDigestApprove, settings.ObserversMaxCount-1),
 		OutgoingRequestsBlockSignaturesBroadcast: make(chan *requests.BlockSignaturesBroadcast, 1),
 		IncomingRequestsBlockSignatures:          make(chan *requests.BlockSignaturesBroadcast, 1),
 		IncomingRequestsChainTop:                 make(chan *requests.ChainTop, 1),
@@ -89,7 +87,6 @@ func NewProducer(
 		// Internal interface
 		IncomingEventTimeFrameEnded: make(chan *ticker.EventTimeFrameEnd, 1),
 
-		settings:   conf,
 		reporter:   reporter,
 		keystore:   keystore,
 		poolTSLs:   poolTSLs,
@@ -197,7 +194,7 @@ func (p *Producer) processTick(tick *ticker.EventTimeFrameEnd, conf *external.Co
 		_ = p.processFinalStage()
 	}()
 
-	if p.settings.Debug {
+	if settings.Conf.Debug {
 		p.log().WithFields(log.Fields{
 			"Index": tick.Index,
 		}).Debug("Time frame changed")
@@ -221,7 +218,7 @@ func (p *Producer) processBlockGenerationFlow(tick *ticker.EventTimeFrameEnd,
 
 	p.nextBlock = &block.Signed{
 		Body:       candidate,
-		Signatures: signatures.NewIndexedObserversSignatures(common.ObserversMaxCount),
+		Signatures: signatures.NewIndexedObserversSignatures(settings.ObserversMaxCount),
 	}
 
 	// Signing the block
@@ -482,7 +479,7 @@ func (p *Producer) generateBlockCandidate(
 		return
 	}
 
-	if p.settings.Debug {
+	if settings.Conf.Debug {
 		p.log().WithFields(log.Fields{
 			"Index":        candidate.Index,
 			"TopBlockHash": candidate.Hash.Hex(),
@@ -499,7 +496,7 @@ func (p *Producer) approveBlockCandidateAndPropagateSignature(
 
 	p.nextBlock = &block.Signed{
 		Body:       candidate,
-		Signatures: signatures.NewIndexedObserversSignatures(common.ObserversMaxCount),
+		Signatures: signatures.NewIndexedObserversSignatures(settings.ObserversMaxCount),
 	}
 
 	signature, err := p.keystore.SignHash(p.nextBlock.Body.Hash)
@@ -507,7 +504,7 @@ func (p *Producer) approveBlockCandidateAndPropagateSignature(
 		return err
 	}
 
-	if p.settings.Debug {
+	if settings.Conf.Debug {
 		p.log().WithFields(log.Fields{
 			"BlockHash":     p.nextBlock.Body.Hash.Hex(),
 			"Signature (S)": signature.S,
@@ -525,7 +522,7 @@ func (p *Producer) approveBlockCandidateAndPropagateSignature(
 		err = errors.ChannelTransferringFailed
 	}
 
-	if p.settings.Debug {
+	if settings.Conf.Debug {
 		context := log.Fields{
 			"Index":   request.Digest.Index,
 			"Attempt": request.Digest.Attempt}
@@ -694,11 +691,11 @@ func (p *Producer) validateCandidateDigestSignatureResponse(
 	}
 
 	remoteObserver := conf.Observers[response.ObserverIndex()]
-	if !p.settings.Debug {
+	if !settings.Conf.Debug {
 		// Prevent validation of it's own signatures,
 		// except in debug mode.
-		if p.settings.Observers.Network.Host == remoteObserver.Host &&
-			p.settings.Observers.Network.Port == remoteObserver.Port {
+		if settings.Conf.Observers.Network.Host == remoteObserver.Host &&
+			settings.Conf.Observers.Network.Port == remoteObserver.Port {
 			return errors.InvalidBlockCandidateDigestApprove
 		}
 	}
@@ -743,7 +740,7 @@ func (p *Producer) validateBlockSignaturesRequest(
 		observer := conf.Observers[i]
 		isValid := p.keystore.CheckExternalSignature(p.nextBlock.Body.Hash, *sig, observer.PubKey)
 		if isValid == false {
-			if p.settings.Debug {
+			if settings.Conf.Debug {
 				p.log().WithFields(log.Fields{
 					"BlockHash":     p.nextBlock.Body.Hash.Hex(),
 					"Signature (S)": sig.S,
@@ -857,7 +854,7 @@ func (p *Producer) hasProposedBlock() bool {
 
 func (p *Producer) handleErrorIfAny(err error) {
 	if err != nil {
-		if p.settings.Debug {
+		if settings.Conf.Debug {
 			p.log().Debug(err)
 		}
 	}

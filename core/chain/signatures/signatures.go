@@ -4,6 +4,7 @@ import (
 	"geo-observers-blockchain/core/common"
 	"geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/crypto/ecdsa"
+	"geo-observers-blockchain/core/settings"
 	"geo-observers-blockchain/core/utils"
 )
 
@@ -35,13 +36,13 @@ func (s *IndexedObserversSignatures) IsMajorityApprovesCollected() bool {
 	for _, sig := range s.At {
 		if sig != nil {
 			positiveVotesPresent++
-			if positiveVotesPresent >= common.ObserversConsensusCount {
+			if positiveVotesPresent >= settings.ObserversConsensusCount {
 				return true
 			}
 
 		} else {
 			negativeVotesPresent++
-			if negativeVotesPresent > common.ObserversMaxCount-common.ObserversConsensusCount {
+			if negativeVotesPresent > settings.ObserversMaxCount-settings.ObserversConsensusCount {
 				return false
 			}
 		}
@@ -51,7 +52,7 @@ func (s *IndexedObserversSignatures) IsMajorityApprovesCollected() bool {
 }
 
 func (s *IndexedObserversSignatures) VotesIndexes() (indexes []uint16) {
-	indexes = make([]uint16, 0, common.ObserversMaxCount)
+	indexes = make([]uint16, 0, settings.ObserversMaxCount)
 	for i, sig := range s.At {
 		if sig != nil {
 			indexes = append(indexes, uint16(i))
@@ -105,7 +106,7 @@ func (s *IndexedObserversSignatures) UnmarshalBinary(data []byte) (err error) {
 		return
 	}
 
-	s.At = make([]*ecdsa.Signature, common.ObserversMaxCount, common.ObserversMaxCount)
+	s.At = make([]*ecdsa.Signature, settings.ObserversMaxCount, settings.ObserversMaxCount)
 
 	var (
 		offset        = common.Uint16ByteSize

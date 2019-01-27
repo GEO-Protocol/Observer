@@ -2,13 +2,13 @@ package pool
 
 import (
 	"encoding"
-	"geo-observers-blockchain/core/common"
 	"geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/common/types/hash"
 	"geo-observers-blockchain/core/common/types/transactions"
 	"geo-observers-blockchain/core/network/communicator/observers/requests"
 	"geo-observers-blockchain/core/network/communicator/observers/responses"
 	"geo-observers-blockchain/core/network/external"
+	"geo-observers-blockchain/core/settings"
 	log "github.com/sirupsen/logrus"
 	"reflect"
 	"time"
@@ -298,8 +298,8 @@ func (h *Handler) processItemsSynchronisation() (err error) {
 func (h *Handler) requestRecordBroadcast(record *Record) (err error) {
 	record.LastSyncAttempt = time.Now()
 
-	destinationObservers := make([]uint16, 0, common.ObserversMaxCount)
-	for i := 0; i < common.ObserversMaxCount; i++ {
+	destinationObservers := make([]uint16, 0, settings.ObserversMaxCount)
+	for i := 0; i < settings.ObserversMaxCount; i++ {
 		if record.Approves[i] == false {
 			destinationObservers = append(destinationObservers, uint16(i))
 		}

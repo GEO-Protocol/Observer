@@ -3,6 +3,7 @@ package lamport
 import (
 	"geo-observers-blockchain/core/common"
 	"geo-observers-blockchain/core/common/errors"
+	"geo-observers-blockchain/core/settings"
 	"geo-observers-blockchain/core/utils"
 )
 
@@ -34,8 +35,8 @@ func (s *Signature) UnmarshalBinary(data []byte) error {
 
 // --------------------------------------------------------------------------------------------------------------------
 
-const (
-	SignaturesMaxCount = common.GEOTransactionMaxParticipantsCount
+var (
+	SignaturesMaxCount = settings.GEOTransactionMaxParticipantsCount
 )
 
 type Signatures struct {
@@ -47,7 +48,7 @@ func (s *Signatures) Add(sig *Signature) error {
 		return errors.NilParameter
 	}
 
-	if s.Count() < SignaturesMaxCount {
+	if s.Count() < uint16(SignaturesMaxCount) {
 		s.At = append(s.At, sig)
 		return nil
 	}

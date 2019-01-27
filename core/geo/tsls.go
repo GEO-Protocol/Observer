@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"geo-observers-blockchain/core/common"
 	"geo-observers-blockchain/core/common/errors"
+	"geo-observers-blockchain/core/settings"
 	"geo-observers-blockchain/core/utils"
 	"sort"
 )
 
-const (
-	TSLsMaxCount = common.GEOTransactionMaxParticipantsCount
+var (
+	TSLsMaxCount = settings.GEOTransactionMaxParticipantsCount
 )
 
 type TSLs struct {
@@ -21,7 +22,7 @@ func (t *TSLs) Add(tsl *TSL) error {
 		return errors.NilParameter
 	}
 
-	if t.Count() < TSLsMaxCount {
+	if t.Count() < uint16(TSLsMaxCount) {
 		t.At = append(t.At, tsl)
 		return nil
 	}
@@ -66,8 +67,8 @@ func (t *TSLs) Sort() (err error) {
 func (t *TSLs) MarshalBinary() (data []byte, err error) {
 	var (
 		initialDataSize = common.Uint16ByteSize + // Total TSLs count.
-			common.Uint32ByteSize*t.Count() + // TSLs sizes fields.
-			TSLMinBinarySize*t.Count() // TSLs bodies.
+			common.Uint32ByteSize*int(t.Count()) + // TSLs sizes fields.
+			TSLMinBinarySize*int(t.Count()) // TSLs bodies.
 	)
 
 	// todo: add internal data size prediction and allocate memory at once.
@@ -98,7 +99,7 @@ func (t *TSLs) UnmarshalBinary(data []byte) (err error) {
 		return
 	}
 
-	if count > TSLsMaxCount {
+	if count > uint16(TSLsMaxCount) {
 		return errors.InvalidDataFormat
 	}
 

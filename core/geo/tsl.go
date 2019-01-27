@@ -7,7 +7,7 @@ import (
 	"geo-observers-blockchain/core/utils"
 )
 
-const (
+var (
 	TSLMinBinarySize = common.TransactionUUIDSize + transactions.MembersMinBinarySize
 )
 

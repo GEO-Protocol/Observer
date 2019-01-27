@@ -5,6 +5,7 @@ import (
 	"geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/common/types/hash"
 	"geo-observers-blockchain/core/geo"
+	"geo-observers-blockchain/core/settings"
 	"geo-observers-blockchain/core/utils"
 )
 
@@ -79,7 +80,7 @@ func (body *Body) UpdateHash(previousBlockHash hash.SHA256Container) (err error)
 // and doest not check if them was called in the past.
 // This methods MUST be called before calling GenerateDigest.
 func (body *Body) GenerateDigest() (digest *Digest, err error) {
-	if body.AuthorObserverIndex >= common.ObserversMaxCount {
+	if body.AuthorObserverIndex >= uint16(settings.ObserversMaxCount) {
 		err = errors.ExpectationFailed
 		return
 	}
