@@ -20,7 +20,7 @@ func TestClaimIsRequestID(t *testing.T) {
 	}
 }
 
-func requestClaimIsPresent(t *testing.T, TxID *transactions.TransactionUUID) *responses.ClaimIsPresent {
+func requestClaimIsPresent(t *testing.T, TxID *transactions.TxID) *responses.ClaimIsPresent {
 	conn := testsCommon.ConnectToObserver(t)
 	defer conn.Close()
 

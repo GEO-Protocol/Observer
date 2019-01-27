@@ -19,4 +19,7 @@ const (
 	// Claims
 	ReqClaimAppend    = 128
 	ReqClaimIsPresent = 130
+
+	// Transactions
+	ReqTxStates = 192
 )

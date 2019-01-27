@@ -12,7 +12,7 @@ import (
 type instance interface {
 	encoding.BinaryMarshaler
 	encoding.BinaryUnmarshaler
-	TxID() *transactions.TransactionUUID
+	TxID() *transactions.TxID
 }
 
 type instances struct {

@@ -20,7 +20,7 @@ func TestTSLIsPresentRequestID(t *testing.T) {
 	}
 }
 
-func requestTSLIsPresent(t *testing.T, TxID *transactions.TransactionUUID) *responses.TSLIsPresent {
+func requestTSLIsPresent(t *testing.T, TxID *transactions.TxID) *responses.TSLIsPresent {
 	conn := testsCommon.ConnectToObserver(t)
 	defer conn.Close()
 

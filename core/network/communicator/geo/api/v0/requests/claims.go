@@ -27,10 +27,10 @@ func (request *ClaimAppend) UnmarshalBinary(data []byte) (err error) {
 
 type ClaimIsPresent struct {
 	*common.RequestWithResponse
-	TxID *transactions.TransactionUUID
+	TxID *transactions.TxID
 }
 
-func NewClaimIsPresent(TxID *transactions.TransactionUUID) *ClaimIsPresent {
+func NewClaimIsPresent(TxID *transactions.TxID) *ClaimIsPresent {
 	return &ClaimIsPresent{
 		RequestWithResponse: common.NewRequestWithResponse(),
 		TxID:                TxID,
@@ -45,6 +45,6 @@ func (request *ClaimIsPresent) MarshalBinary() (data []byte, err error) {
 
 func (request *ClaimIsPresent) UnmarshalBinary(data []byte) (err error) {
 	request.RequestWithResponse = common.NewRequestWithResponse()
-	request.TxID = transactions.NewTransactionUUID()
+	request.TxID = transactions.NewTxID()
 	return request.TxID.UnmarshalBinary(data)
 }

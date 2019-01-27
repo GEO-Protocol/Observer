@@ -12,13 +12,13 @@ const (
 )
 
 type TSL struct {
-	TxUUID  *transactions.TransactionUUID
+	TxUUID  *transactions.TxID
 	Members *transactions.Members
 }
 
 func NewTSL() *TSL {
 	return &TSL{
-		TxUUID:  transactions.NewTransactionUUID(),
+		TxUUID:  transactions.NewTxID(),
 		Members: &transactions.Members{},
 	}
 }
@@ -47,7 +47,7 @@ func (t *TSL) UnmarshalBinary(data []byte) (err error) {
 		return errors.InvalidDataFormat
 	}
 
-	t.TxUUID = &transactions.TransactionUUID{}
+	t.TxUUID = &transactions.TxID{}
 	err = t.TxUUID.UnmarshalBinary(data[:common.TransactionUUIDSize])
 	if err != nil {
 		return
@@ -57,6 +57,6 @@ func (t *TSL) UnmarshalBinary(data []byte) (err error) {
 	return t.Members.UnmarshalBinary(data[common.TransactionUUIDSize:])
 }
 
-func (t *TSL) TxID() *transactions.TransactionUUID {
+func (t *TSL) TxID() *transactions.TxID {
 	return t.TxUUID
 }

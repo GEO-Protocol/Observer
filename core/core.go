@@ -369,6 +369,13 @@ func (c *Core) processIncomingGEONodeRequest(r geoRequestsCommon.Request) (err e
 			processTransferringFail(r, c.blocksProducer)
 		}
 
+	case *geoRequests.TxsStates:
+		select {
+		case c.blocksProducer.GEORequestsTxStates <- r.(*geoRequests.TxsStates):
+		default:
+			processTransferringFail(r, c.blocksProducer)
+		}
+
 	default:
 		err = utils.Error("core", "unexpected request type occurred")
 	}

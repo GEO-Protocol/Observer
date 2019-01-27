@@ -23,7 +23,7 @@ func TestTSLGetRequestID(t *testing.T) {
 func TestTSLGet(t *testing.T) {
 	{
 		// TSL that is ABSENT in chain.
-		response := requestTSLGet(t, transactions.NewTransactionUUID())
+		response := requestTSLGet(t, transactions.NewTxID())
 		if response.IsPresent {
 			t.Error()
 		}
@@ -40,7 +40,7 @@ func TestTSLGet(t *testing.T) {
 	}
 }
 
-func requestTSLGet(t *testing.T, TxID *transactions.TransactionUUID) *responses.TSLGet {
+func requestTSLGet(t *testing.T, TxID *transactions.TxID) *responses.TSLGet {
 	conn := testsCommon.ConnectToObserver(t)
 	defer conn.Close()
 

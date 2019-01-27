@@ -158,7 +158,7 @@ func (h *Handler) DropInstances(hashes []hash.SHA256Container) (errors chan erro
 }
 
 func (h *Handler) ContainsInstance(
-	TxID *transactions.TransactionUUID) (results chan bool, errors chan error) {
+	TxID *transactions.TxID) (results chan bool, errors chan error) {
 	errors = make(chan error, 1)
 	results = make(chan bool, 1)
 

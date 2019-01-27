@@ -40,7 +40,6 @@ func GetResponse(t *testing.T, response encoding.BinaryUnmarshaler, conn net.Con
 		t.Fatal(err)
 	}
 
-	_, _ = reader.Discard(4)
 	var offset uint32 = 0
 	data := make([]byte, messageSize, messageSize)
 	for {
@@ -82,8 +81,8 @@ func SendDataOrReportError(conn net.Conn, data []byte) (err error) {
 	data = append([]byte{0}, data...) // protocol header
 
 	var (
-		dataLength       = uint64(len(data))
-		dataLengthBinary = utils.MarshalUint64(dataLength)
+		dataLength       = uint32(len(data))
+		dataLengthBinary = utils.MarshalUint32(dataLength)
 	)
 
 	_, err = conn.Write(dataLengthBinary)

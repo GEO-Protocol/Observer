@@ -55,6 +55,9 @@ func dispatchRequest(data []byte) (request common.Request, e errors.E) {
 	case common.ReqClaimIsPresent:
 		return parseRequest(&requests.ClaimIsPresent{}, requestData)
 
+	case common.ReqTxStates:
+		return parseRequest(&requests.TxsStates{}, requestData)
+
 	default:
 		return nil, errors.AppendStackTrace(errors.InvalidDataFormat)
 	}

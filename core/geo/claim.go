@@ -14,13 +14,13 @@ const (
 )
 
 type Claim struct {
-	TxUUID  *transactions.TransactionUUID
+	TxUUID  *transactions.TxID
 	Members *transactions.Members
 }
 
 func NewClaim() *Claim {
 	return &Claim{
-		TxUUID:  transactions.NewTransactionUUID(),
+		TxUUID:  transactions.NewTxID(),
 		Members: &transactions.Members{},
 	}
 }
@@ -54,7 +54,7 @@ func (claim *Claim) UnmarshalBinary(data []byte) (err error) {
 		offsetMembersData = offsetUUIDData + common.TransactionUUIDSize
 	)
 
-	claim.TxUUID = transactions.NewTransactionUUID()
+	claim.TxUUID = transactions.NewTxID()
 	err = claim.TxUUID.UnmarshalBinary(data[:common.TransactionUUIDSize])
 	if err != nil {
 		return
@@ -69,7 +69,7 @@ func (claim *Claim) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
-func (claim *Claim) TxID() *transactions.TransactionUUID {
+func (claim *Claim) TxID() *transactions.TxID {
 	return claim.TxUUID
 }
 

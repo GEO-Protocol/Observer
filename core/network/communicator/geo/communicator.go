@@ -124,7 +124,11 @@ func (r *Communicator) handleResponseIfAny(conn net.Conn, request geoRequests.Re
 		}).Debug("Enqueued for sending")
 		processResponseSending(response)
 
-	case <-time.After(time.Second * 2):
+	case err := <-request.ErrorsChannel():
+		globalErrorsFlow <- err
+		return
+
+	case <-time.After(time.Second * 10):
 		globalErrorsFlow <- errors.NoResponseReceived
 	}
 }
@@ -142,7 +146,6 @@ func (r *Communicator) receiveData(conn net.Conn) (data []byte, e errors.E) {
 		e = errors.AppendStackTrace(errors.InvalidDataFormat)
 		return
 	}
-	_, _ = reader.Discard(4)
 
 	messageSize, err := utils.UnmarshalUint32(messageSizeBinary)
 	if err != nil {
@@ -175,7 +178,7 @@ func (r *Communicator) receiveData(conn net.Conn) (data []byte, e errors.E) {
 
 func (r *Communicator) sendData(conn net.Conn, data []byte) (e errors.E) {
 	dataSize := len(data)
-	dataSizeBinary := utils.MarshalUint64(uint64(dataSize))
+	dataSizeBinary := utils.MarshalUint32(uint32(dataSize))
 	data = append(dataSizeBinary, data...)
 
 	totalBytesSent := 0

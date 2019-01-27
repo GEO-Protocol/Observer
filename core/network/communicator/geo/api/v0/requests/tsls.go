@@ -27,10 +27,10 @@ func (request *TSLAppend) UnmarshalBinary(data []byte) (err error) {
 
 type TSLGet struct {
 	*common.RequestWithResponse
-	TxID *transactions.TransactionUUID
+	TxID *transactions.TxID
 }
 
-func NewTSLGet(TxID *transactions.TransactionUUID) *TSLGet {
+func NewTSLGet(TxID *transactions.TxID) *TSLGet {
 	return &TSLGet{
 		RequestWithResponse: common.NewRequestWithResponse(),
 		TxID:                TxID,
@@ -45,7 +45,7 @@ func (request *TSLGet) MarshalBinary() (data []byte, err error) {
 
 func (request *TSLGet) UnmarshalBinary(data []byte) (err error) {
 	request.RequestWithResponse = common.NewRequestWithResponse()
-	request.TxID = &transactions.TransactionUUID{}
+	request.TxID = &transactions.TxID{}
 	return request.TxID.UnmarshalBinary(data)
 }
 
@@ -53,10 +53,10 @@ func (request *TSLGet) UnmarshalBinary(data []byte) (err error) {
 
 type TSLIsPresent struct {
 	*common.RequestWithResponse
-	TxID *transactions.TransactionUUID
+	TxID *transactions.TxID
 }
 
-func NewTSLIsPresent(TxID *transactions.TransactionUUID) *TSLIsPresent {
+func NewTSLIsPresent(TxID *transactions.TxID) *TSLIsPresent {
 	return &TSLIsPresent{
 		RequestWithResponse: common.NewRequestWithResponse(),
 		TxID:                TxID,
@@ -71,6 +71,6 @@ func (request *TSLIsPresent) MarshalBinary() (data []byte, err error) {
 
 func (request *TSLIsPresent) UnmarshalBinary(data []byte) (err error) {
 	request.RequestWithResponse = common.NewRequestWithResponse()
-	request.TxID = &transactions.TransactionUUID{}
+	request.TxID = &transactions.TxID{}
 	return request.TxID.UnmarshalBinary(data)
 }

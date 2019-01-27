@@ -24,5 +24,5 @@ type EventItemsDroppingRequest struct {
 type EventInstanceIsPresentRequest struct {
 	Errors chan error
 	Result chan bool
-	TxID   *transactions.TransactionUUID
+	TxID   *transactions.TxID
 }

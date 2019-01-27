@@ -27,7 +27,7 @@ func LaunchTestObserver() (err error) {
 		}
 
 		// Timout is needed for the observer to init it's interfaces.
-		time.Sleep(time.Second)
+		time.Sleep(time.Second * 3)
 	}
 
 	return
