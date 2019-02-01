@@ -4,6 +4,7 @@ import (
 	"geo-observers-blockchain/core/chain/block"
 	"geo-observers-blockchain/core/chain/signatures"
 	"geo-observers-blockchain/core/common"
+	"geo-observers-blockchain/core/common/types/hash"
 	"geo-observers-blockchain/core/settings"
 	"geo-observers-blockchain/core/utils"
 )
@@ -84,4 +85,43 @@ func (r *BlockSignaturesBroadcast) UnmarshalBinary(data []byte) (err error) {
 
 	r.Signatures = signatures.NewIndexedObserversSignatures(settings.ObserversMaxCount)
 	return r.Signatures.UnmarshalBinary(data[common.Uint16ByteSize:])
+}
+
+// --------------------------------------------------------------------------------------------------------------------
+
+type BlockHashBroadcast struct {
+	request
+	Hash *hash.SHA256Container
+}
+
+func NewBlockHashBroadcast(hash *hash.SHA256Container) *BlockHashBroadcast {
+	return &BlockHashBroadcast{
+		request: newRequest(nil),
+		Hash:    hash,
+	}
+}
+
+func (r *BlockHashBroadcast) MarshalBinary() (data []byte, err error) {
+	requestBinary, err := r.request.MarshalBinary()
+	if err != nil {
+		return
+	}
+
+	hashBinary, err := r.Hash.MarshalBinary()
+	if err != nil {
+		return
+	}
+
+	data = utils.ChainByteSlices(requestBinary, hashBinary)
+	return
+}
+
+func (r *BlockHashBroadcast) UnmarshalBinary(data []byte) (err error) {
+	err = r.request.UnmarshalBinary(data[0:common.Uint16ByteSize])
+	if err != nil {
+		return
+	}
+
+	r.Hash = &hash.SHA256Container{}
+	return r.Hash.UnmarshalBinary(data[common.Uint16ByteSize:])
 }

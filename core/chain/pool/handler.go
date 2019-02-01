@@ -339,7 +339,7 @@ func (h *Handler) blockReadyItems(event *EventBlockReadyInstancesRequest) {
 	blockReadyItems := &instances{}
 
 	for _, record := range h.pool.index {
-		if record.IsMajorityApprovesCollected() == false {
+		if record.IsMajorityApprovesCollected() == true {
 			blockReadyItems.At = append(blockReadyItems.At, record.Instance)
 		}
 	}

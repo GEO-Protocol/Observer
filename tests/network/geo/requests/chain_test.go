@@ -20,7 +20,7 @@ func TestLastBlockNumberRequestID(t *testing.T) {
 }
 
 func TestLastBlockHeight(t *testing.T) {
-	conn := testsCommon.ConnectToObserver(t)
+	conn := testsCommon.ConnectToObserver(t, 0)
 	defer conn.Close()
 
 	request := &requests.LastBlockNumber{}

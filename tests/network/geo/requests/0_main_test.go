@@ -16,7 +16,7 @@ func TestMain(m *testing.M) {
 
 	code := m.Run()
 
-	err = tests.TerminateObserver()
+	err = tests.TerminateObservers()
 	if err != nil {
 		fmt.Println(err)
 		return

@@ -10,24 +10,24 @@ import (
 )
 
 const (
-	AppendTSLRequestID = 64
+	AppendClaimRequestID = 128
 )
 
-func TestTSLAppendRequestID(t *testing.T) {
+func TestClaimAppendRequestID(t *testing.T) {
 	if //noinspection GoBoolExpressions
-	AppendTSLRequestID != common.ReqTSLAppend {
+	AppendClaimRequestID != common.ReqClaimAppend {
 		t.Fatal()
 	}
 }
 
-func TestTSLAppendPoolOnly(t *testing.T) {
+func TestClaimAppendPoolOnly(t *testing.T) {
 	{
 		// TSL with one signature.
 		// (check in pool only).
-		tsl := createEmptyTSL(1)
-		requestTSLAppend(t, tsl)
+		claim := createEmptyClaim(1)
+		requestClaimAppend(t, claim)
 
-		response := requestTSLIsPresent(t, tsl.TxUUID)
+		response := requestClaimIsPresent(t, claim.TxUUID)
 		if !response.PresentInPool {
 			t.Error()
 		}
@@ -44,7 +44,7 @@ func TestTSLAppendPoolOnly(t *testing.T) {
 	}
 }
 
-func TestTSLAppendToChain(t *testing.T) {
+func TestAppendToChain(t *testing.T) {
 	// todo: implement
 
 	{
@@ -56,7 +56,7 @@ func TestTSLAppendToChain(t *testing.T) {
 	}
 }
 
-func TestInvalidTSL(t *testing.T) {
+func TestInvalidClaim(t *testing.T) {
 	// todo: implement
 
 	{
@@ -68,12 +68,12 @@ func TestInvalidTSL(t *testing.T) {
 	}
 }
 
-func requestTSLAppend(t *testing.T, tsl *geo.TSL) {
-	conn := testsCommon.ConnectToObserver(t)
+func requestClaimAppend(t *testing.T, claim *geo.Claim) {
+	conn := testsCommon.ConnectToObserver(t, 0)
 	defer conn.Close()
 
-	request := requests.TSLAppend{TSL: tsl}
-	requestBinary, err := request.MarshalBinary()
+	request := requests.ClaimAppend{Claim: claim}
+	requestBinary, err := request.MarshallBinary()
 	if err != nil {
 		t.Error()
 	}
@@ -81,15 +81,15 @@ func requestTSLAppend(t *testing.T, tsl *geo.TSL) {
 	testsCommon.SendData(t, conn, requestBinary)
 }
 
-func createEmptyTSL(membersCount int) (tsl *geo.TSL) {
-	txID, _ := transactions.NewRandomTransactionUUID()
-	members := &transactions.Members{}
+func createEmptyClaim(membersCount int) (claim *geo.Claim) {
+	txID, _ := transactions.NewRandomTxID(1)
+	members := &geo.ClaimMembers{}
 
 	for i := 0; i < membersCount; i++ {
-		_ = members.Add(transactions.NewMember(uint16(i)))
+		_ = members.Add(geo.NewClaimMember(uint16(i)))
 	}
 
-	tsl = &geo.TSL{
+	claim = &geo.Claim{
 		TxUUID:  txID,
 		Members: members,
 	}

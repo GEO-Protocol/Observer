@@ -10,18 +10,18 @@ import (
 )
 
 var (
-	ClaimMinBinarySize = common.TransactionUUIDSize + transactions.MembersMinBinarySize
+	ClaimMinBinarySize = transactions.TxIDBinarySize + ClaimMembersMinBinarySize
 )
 
 type Claim struct {
 	TxUUID  *transactions.TxID
-	Members *transactions.Members
+	Members *ClaimMembers
 }
 
 func NewClaim() *Claim {
 	return &Claim{
-		TxUUID:  transactions.NewTxID(),
-		Members: &transactions.Members{},
+		TxUUID:  transactions.NewEmptyTxID(),
+		Members: &ClaimMembers{},
 	}
 }
 
@@ -51,16 +51,16 @@ func (claim *Claim) UnmarshalBinary(data []byte) (err error) {
 
 	const (
 		offsetUUIDData    = 0
-		offsetMembersData = offsetUUIDData + common.TransactionUUIDSize
+		offsetMembersData = offsetUUIDData + transactions.TxIDBinarySize
 	)
 
-	claim.TxUUID = transactions.NewTxID()
-	err = claim.TxUUID.UnmarshalBinary(data[:common.TransactionUUIDSize])
+	claim.TxUUID = transactions.NewEmptyTxID()
+	err = claim.TxUUID.UnmarshalBinary(data[:transactions.TxIDBinarySize])
 	if err != nil {
 		return
 	}
 
-	claim.Members = &transactions.Members{}
+	claim.Members = &ClaimMembers{}
 	err = claim.Members.UnmarshalBinary(data[offsetMembersData:])
 	if err != nil {
 		return

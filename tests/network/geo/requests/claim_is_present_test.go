@@ -21,7 +21,7 @@ func TestClaimIsRequestID(t *testing.T) {
 }
 
 func requestClaimIsPresent(t *testing.T, TxID *transactions.TxID) *responses.ClaimIsPresent {
-	conn := testsCommon.ConnectToObserver(t)
+	conn := testsCommon.ConnectToObserver(t, 0)
 	defer conn.Close()
 
 	request := requests.NewClaimIsPresent(TxID)

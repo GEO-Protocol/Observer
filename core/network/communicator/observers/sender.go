@@ -98,9 +98,11 @@ func (s *Sender) processRequestSending(request requests.Request, errors chan<- e
 	}
 
 	send := func(streamType []byte, destinationObservers []uint16) {
-		s.log().WithFields(log.Fields{
-			"Type": reflect.TypeOf(request).String(),
-		}).Debug("Enqueued")
+		if settings.OutputNetworkObserversSenderDebug {
+			s.log().WithFields(log.Fields{
+				"Type": reflect.TypeOf(request).String(),
+			}).Debug("Enqueued")
+		}
 
 		data = markAs(data, streamType)
 		s.sendDataToObservers(data, destinationObservers, errors)
@@ -123,7 +125,9 @@ func (s *Sender) processRequestSending(request requests.Request, errors chan<- e
 
 		default:
 			// todo: report error here
-			s.log().Debug("unexpected broadcast request occurred")
+			if settings.OutputNetworkObserversSenderDebug {
+				s.log().Debug("unexpected broadcast request occurred")
+			}
 		}
 
 	case *requests.CandidateDigestBroadcast:
@@ -138,12 +142,22 @@ func (s *Sender) processRequestSending(request requests.Request, errors chan<- e
 	case *requests.ChainTop:
 		send(constants.StreamTypeRequestChainTop, allObservers())
 
+	case *requests.TimeFrameCollision:
+		send(constants.StreamTypeRequestTimeFrameCollision,
+			request.(*requests.TimeFrameCollision).DestinationObservers())
+
+	case *requests.BlockHashBroadcast:
+		send(constants.StreamTypeRequestBlockHashBroadcast, allObservers())
+
 	default:
 		// todo: enhance this ugly errors handling
 		errors <- utils.Error(
 			"observers sender",
 			"unexpected request type occurred")
-		s.log().Debug("Unexpected request type occurred")
+
+		if settings.OutputNetworkObserversSenderDebug {
+			s.log().Debug("Unexpected request type occurred")
+		}
 	}
 }
 
@@ -161,9 +175,11 @@ func (s *Sender) processResponseSending(response responses.Response, errors chan
 	}
 
 	send := func(streamType []byte, destinationObservers []uint16) {
-		s.log().WithFields(log.Fields{
-			"Type": reflect.TypeOf(response).String(),
-		}).Debug("Enqueued")
+		if settings.OutputNetworkObserversSenderDebug {
+			s.log().WithFields(log.Fields{
+				"Type": reflect.TypeOf(response).String(),
+			}).Debug("Enqueued")
+		}
 
 		data = markAs(data, streamType)
 		s.sendDataToObservers(data, destinationObservers, errors)
@@ -199,7 +215,10 @@ func (s *Sender) processResponseSending(response responses.Response, errors chan
 		errors <- utils.Error(
 			"observers sender",
 			"unexpected response type occurred")
-		s.log().Debug("Unexpected response type occurred")
+
+		if settings.OutputNetworkObserversSenderDebug {
+			s.log().Debug("Unexpected response type occurred")
+		}
 	}
 }
 
@@ -358,15 +377,17 @@ func (s *Sender) connectToObserver(o *external.Observer) (connection *Connection
 		//
 		// To make it possible - some additional log information is printed here.
 
-		s.log().WithFields(log.Fields{
-			"Host": o.Host,
-			"Port": o.Port,
-		}).Warn("Remote obs. connection refused")
+		if settings.OutputNetworkObserversSenderWarnings {
+			s.log().WithFields(log.Fields{
+				"Host": o.Host,
+				"Port": o.Port,
+			}).Warn("Remote obs. connection refused")
+		}
 
 		return nil, ErrObserverConnectionRefused
 	}
 
-	if settings.Conf.Debug {
+	if settings.OutputNetworkObserversSenderDebug {
 		s.log().WithFields(log.Fields{
 			"Host": o.Host,
 			"Port": o.Port,
@@ -378,10 +399,12 @@ func (s *Sender) connectToObserver(o *external.Observer) (connection *Connection
 }
 
 func (s *Sender) logEgress(bytesSent int, conn net.Conn) {
-	s.log().WithFields(log.Fields{
-		"Bytes":     bytesSent,
-		"Addressee": conn.RemoteAddr(),
-	}).Debug("[TX =>]")
+	if settings.OutputNetworkObserversSenderDebug {
+		s.log().WithFields(log.Fields{
+			"Bytes":     bytesSent,
+			"Addressee": conn.RemoteAddr(),
+		}).Debug("[TX =>]")
+	}
 }
 
 func (s *Sender) log() *log.Entry {

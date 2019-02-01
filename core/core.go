@@ -22,7 +22,7 @@ import (
 
 type Core struct {
 	keystore              *keystore.KeyStore
-	timer                 *ticker.Ticker
+	ticker                *ticker.Ticker
 	observersConfReporter *external.Reporter
 	receiverGEONodes      *geoNet.Communicator
 	receiverObservers     *observersNet.Receiver
@@ -47,7 +47,7 @@ func New() (core *Core, err error) {
 
 	core = &Core{
 		keystore:              k,
-		timer:                 ticker.New(reporter),
+		ticker:                ticker.New(reporter),
 		observersConfReporter: reporter,
 		senderObservers:       observersNet.NewSender(reporter),
 		receiverObservers:     observersNet.NewReceiver(),
@@ -109,7 +109,7 @@ func (c *Core) initNetwork(errors chan error) {
 }
 
 func (c *Core) initProcessing(globalErrorsFlow chan error) {
-	go c.timer.Run(globalErrorsFlow)
+	go c.ticker.Run(globalErrorsFlow)
 	go c.blocksProducer.Run(globalErrorsFlow)
 
 	go c.dispatchDataFlows(globalErrorsFlow)
@@ -138,7 +138,7 @@ func (c *Core) dispatchDataFlows(globalErrorsFlow chan error) {
 				processTransferringFail(eventConnectionClosed, c.senderObservers)
 			}
 
-		case tick := <-c.timer.OutgoingEventsTimeFrameEnd:
+		case tick := <-c.ticker.OutgoingEventsTimeFrameEnd:
 			select {
 			case c.blocksProducer.IncomingEventTimeFrameEnded <- tick:
 			default:
@@ -181,15 +181,29 @@ func (c *Core) dispatchDataFlows(globalErrorsFlow chan error) {
 				processTransferringFail(outgoingResponseChainTop, c.senderObservers)
 			}
 
+		case outgoingRequestTimeFrameCollision := <-c.blocksProducer.OutgoingRequestsTimeFrameCollisions:
+			select {
+			case c.senderObservers.OutgoingRequests <- outgoingRequestTimeFrameCollision:
+			default:
+				processTransferringFail(outgoingRequestTimeFrameCollision, c.senderObservers)
+			}
+
+		case outgoingRequestBlockHashBroadcast := <-c.blocksProducer.OutgoingRequestsBlockHashBroadcast:
+			select {
+			case c.senderObservers.OutgoingRequests <- outgoingRequestBlockHashBroadcast:
+			default:
+				processTransferringFail(outgoingRequestBlockHashBroadcast, c.senderObservers)
+			}
+
 		// Ticker
-		case outgoingRequestTimeFrames := <-c.timer.OutgoingRequestsTimeFrames:
+		case outgoingRequestTimeFrames := <-c.ticker.OutgoingRequestsTimeFrames:
 			select {
 			case c.senderObservers.OutgoingRequests <- outgoingRequestTimeFrames:
 			default:
 				processTransferringFail(outgoingRequestTimeFrames, c.senderObservers)
 			}
 
-		case outgoingResponseTimeFrame := <-c.timer.OutgoingResponsesTimeFrame:
+		case outgoingResponseTimeFrame := <-c.ticker.OutgoingResponsesTimeFrame:
 			select {
 			case c.senderObservers.OutgoingResponses <- outgoingResponseTimeFrame:
 			default:
@@ -262,9 +276,9 @@ func (c *Core) processIncomingRequest(r requests.Request) (err error) {
 	switch r.(type) {
 	case *requests.SynchronisationTimeFrames:
 		select {
-		case c.timer.IncomingRequestsTimeFrames <- r.(*requests.SynchronisationTimeFrames):
+		case c.ticker.IncomingRequestsTimeFrames <- r.(*requests.SynchronisationTimeFrames):
 		default:
-			processTransferringFail(r, c.timer)
+			processTransferringFail(r, c.ticker)
 		}
 
 	case *requests.PoolInstanceBroadcast:
@@ -304,6 +318,20 @@ func (c *Core) processIncomingRequest(r requests.Request) (err error) {
 	case *requests.ChainTop:
 		select {
 		case c.blocksProducer.IncomingRequestsChainTop <- r.(*requests.ChainTop):
+		default:
+			processTransferringFail(r, c.blocksProducer)
+		}
+
+	case *requests.TimeFrameCollision:
+		select {
+		case c.ticker.IncomingRequestsTimeFrameCollision <- r.(*requests.TimeFrameCollision):
+		default:
+			processTransferringFail(r, c.ticker)
+		}
+
+	case *requests.BlockHashBroadcast:
+		select {
+		case c.blocksProducer.IncomingRequestsBlockHashBroadcast <- r.(*requests.BlockHashBroadcast):
 		default:
 			processTransferringFail(r, c.blocksProducer)
 		}
@@ -393,10 +421,10 @@ func (c *Core) processIncomingResponse(r responses.Response) (err error) {
 	switch r.(type) {
 	case *responses.TimeFrame:
 		select {
-		case c.timer.IncomingResponsesTimeFrame <- r.(*responses.TimeFrame):
+		case c.ticker.IncomingResponsesTimeFrame <- r.(*responses.TimeFrame):
 
 		default:
-			processTransferringFail(r, c.timer)
+			processTransferringFail(r, c.ticker)
 		}
 
 	case *responses.ClaimApprove:
