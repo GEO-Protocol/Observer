@@ -20,6 +20,10 @@ var (
 
 	DataTypeRequestChainTop  uint8 = 137
 	DataTypeResponseChainTop uint8 = 138
+
+	DataTypeRequestBlockHashBroadcast uint8 = 139
+
+	DataTypeRequestTimeFrameCollision uint8 = 140
 )
 
 var (
@@ -40,4 +44,8 @@ var (
 
 	StreamTypeRequestChainTop  = []byte{DataTypeRequestChainTop}
 	StreamTypeResponseChainTop = []byte{DataTypeResponseChainTop}
+
+	StreamTypeRequestBlockHashBroadcast = []byte{DataTypeRequestBlockHashBroadcast}
+
+	StreamTypeRequestTimeFrameCollision = []byte{DataTypeRequestTimeFrameCollision}
 )

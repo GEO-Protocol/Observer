@@ -113,6 +113,7 @@ var (
 	TSLsPoolReadFailed                 = errors.New("can't fetch block ready tsls from pool")
 	ClaimsPoolReadFailed               = errors.New("can't fetch block ready claims from pool")
 	InvalidBlockCandidateDigest        = errors.New("invalid block candidate digest")
+	InvalidTimeFrame                   = errors.New("invalid time frame")
 	InvalidBlockCandidateDigestApprove = errors.New("invalid block candidate digest approve")
 	InvalidBlockSignatures             = errors.New("invalid block signatures")
 

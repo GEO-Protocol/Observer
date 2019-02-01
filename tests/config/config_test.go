@@ -9,14 +9,14 @@ import (
 )
 
 func TestDebugClusterMode(t *testing.T) {
-	_ = tests.TerminateObserver()
+	_ = tests.TerminateObservers()
 
 	cmd := exec.Command("/tmp/observer_tests/observer", "--mode=debug-cluster")
 	cmd.Dir = "/tmp/observer_tests/"
 
 	go func() {
 		time.Sleep(time.Second)
-		_ = tests.TerminateObserver()
+		_ = tests.TerminateObservers()
 	}()
 
 	out, _ := cmd.Output()

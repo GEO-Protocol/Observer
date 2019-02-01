@@ -45,6 +45,6 @@ func (request *ClaimIsPresent) MarshalBinary() (data []byte, err error) {
 
 func (request *ClaimIsPresent) UnmarshalBinary(data []byte) (err error) {
 	request.RequestWithResponse = common.NewRequestWithResponse()
-	request.TxID = transactions.NewTxID()
+	request.TxID = transactions.NewEmptyTxID()
 	return request.TxID.UnmarshalBinary(data)
 }

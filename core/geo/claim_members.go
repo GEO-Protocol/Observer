@@ -1,4 +1,4 @@
-package transactions
+package geo
 
 import (
 	"geo-observers-blockchain/core/common"
@@ -8,20 +8,20 @@ import (
 )
 
 var (
-	MembersMaxCount      = settings.GEOTransactionMaxParticipantsCount
-	MembersMinBinarySize = common.Uint16ByteSize + MemberBinarySize
+	ClaimMembersMaxCount      = settings.GEOTransactionMaxParticipantsCount
+	ClaimMembersMinBinarySize = common.Uint16ByteSize + ClaimMemberBinarySize
 )
 
-type Members struct {
-	At []*Member
+type ClaimMembers struct {
+	At []*ClaimMember
 }
 
-func (members *Members) Add(member *Member) error {
+func (members *ClaimMembers) Add(member *ClaimMember) error {
 	if member == nil {
 		return errors.NilParameter
 	}
 
-	if members.Count() < uint16(MembersMaxCount) {
+	if members.Count() < uint16(ClaimMembersMaxCount) {
 		members.At = append(members.At, member)
 		return nil
 	}
@@ -29,19 +29,19 @@ func (members *Members) Add(member *Member) error {
 	return errors.MaxCountReached
 }
 
-func (members *Members) Count() uint16 {
+func (members *ClaimMembers) Count() uint16 {
 	return uint16(len(members.At))
 }
 
-func (members *Members) MarshalBinary() (data []byte, err error) {
+func (members *ClaimMembers) MarshalBinary() (data []byte, err error) {
 	totalMembersCount := len(members.At)
-	if totalMembersCount > MembersMaxCount {
+	if totalMembersCount > ClaimMembersMaxCount {
 		err = errors.MaxCountReached
 		return
 	}
 
 	totalBinarySize :=
-		totalMembersCount*MemberBinarySize +
+		totalMembersCount*ClaimMemberBinarySize +
 			common.Uint16ByteSize // members count
 
 	data = make([]byte, 0, totalBinarySize)
@@ -59,8 +59,8 @@ func (members *Members) MarshalBinary() (data []byte, err error) {
 	return
 }
 
-func (members *Members) UnmarshalBinary(data []byte) (err error) {
-	if len(data) < MembersMinBinarySize {
+func (members *ClaimMembers) UnmarshalBinary(data []byte) (err error) {
+	if len(data) < ClaimMembersMinBinarySize {
 		return errors.InvalidDataFormat
 	}
 
@@ -69,18 +69,18 @@ func (members *Members) UnmarshalBinary(data []byte) (err error) {
 		return
 	}
 
-	if totalMembersCount > uint16(MembersMaxCount) {
+	if totalMembersCount > uint16(ClaimMembersMaxCount) {
 		return errors.InvalidDataFormat
 	}
 
-	members.At = make([]*Member, 0, int(totalMembersCount))
-	for offset := common.Uint16ByteSize; offset < len(data); offset += MemberBinarySize {
-		if len(data)-offset < MemberBinarySize {
+	members.At = make([]*ClaimMember, 0, int(totalMembersCount))
+	for offset := common.Uint16ByteSize; offset < len(data); offset += ClaimMemberBinarySize {
+		if len(data)-offset < ClaimMemberBinarySize {
 			return errors.InvalidDataFormat
 		}
 
-		member := &Member{}
-		membersData := data[offset : offset+MemberBinarySize]
+		member := &ClaimMember{}
+		membersData := data[offset : offset+ClaimMemberBinarySize]
 		err = member.UnmarshalBinary(membersData)
 		if err != nil {
 			return

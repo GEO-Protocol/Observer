@@ -41,6 +41,9 @@ type Producer struct {
 	IncomingRequestsBlockSignatures          chan *requests.BlockSignaturesBroadcast
 	IncomingRequestsChainTop                 chan *requests.ChainTop
 	OutgoingResponsesChainTop                chan *responses.ChainTop
+	OutgoingRequestsTimeFrameCollisions      chan *requests.TimeFrameCollision // todo: implement this mechanics
+	OutgoingRequestsBlockHashBroadcast       chan *requests.BlockHashBroadcast
+	IncomingRequestsBlockHashBroadcast       chan *requests.BlockHashBroadcast
 
 	// GEO Node interface
 	GEORequestsLastBlockHeight chan *geoRequests.LastBlockNumber
@@ -76,6 +79,9 @@ func NewProducer(
 		IncomingRequestsBlockSignatures:          make(chan *requests.BlockSignaturesBroadcast, 1),
 		IncomingRequestsChainTop:                 make(chan *requests.ChainTop, 1),
 		OutgoingResponsesChainTop:                make(chan *responses.ChainTop, 1),
+		OutgoingRequestsTimeFrameCollisions:      make(chan *requests.TimeFrameCollision, 1),
+		OutgoingRequestsBlockHashBroadcast:       make(chan *requests.BlockHashBroadcast, 1),
+		IncomingRequestsBlockHashBroadcast:       make(chan *requests.BlockHashBroadcast, 1),
 
 		// GEO Node interface
 		GEORequestsLastBlockHeight: make(chan *geoRequests.LastBlockNumber, 1),
@@ -116,6 +122,19 @@ func (p *Producer) Run(globalErrorsFlow chan<- error) {
 		globalErrorsFlow <- errors.SyncFailed
 		return
 	}
+
+	//// Wait for the next tick.
+	//<-p.IncomingEventTimeFrameEnded
+	//
+	//// wait until last block would be generated and committed
+	//time.Sleep(settings.AverageBlockGenerationTimeRange / 3)
+	//
+	//// Load last generated block data
+	//syncResult = <-p.composer.SyncChain(p.chain)
+	//if syncResult.Error != nil {
+	//	globalErrorsFlow <- errors.SyncFailed
+	//	return
+	//}
 
 	// Chain must be recreated after sync
 	p.chain, err = NewChain(DataFilePath)
@@ -194,11 +213,9 @@ func (p *Producer) processTick(tick *ticker.EventTimeFrameEnd, conf *external.Co
 		_ = p.processFinalStage()
 	}()
 
-	if settings.Conf.Debug {
-		p.log().WithFields(log.Fields{
-			"Index": tick.Index,
-		}).Debug("Time frame changed")
-	}
+	p.log().WithFields(log.Fields{
+		"Index": tick.Index,
+	}).Info("Time frame changed")
 
 	currentObserverMustGenerateBlock := tick.Index == conf.CurrentObserverIndex
 	if currentObserverMustGenerateBlock {
@@ -255,6 +272,13 @@ func (p *Producer) processValidationFlow(
 			}
 			continue
 
+		case reqBlockHashBroadcast := <-p.IncomingRequestsBlockHashBroadcast:
+			err = p.processReceivedBlockHashBroadcast(reqBlockHashBroadcast)
+			if err != nil {
+				// todo: report error and DO NOT STOP THE METHOD
+			}
+			continue
+
 		case <-time.After(p.finalStageTimeLeft(tick)):
 			return
 		}
@@ -266,8 +290,22 @@ func (p *Producer) processIncomingDigest(
 	tick *ticker.EventTimeFrameEnd,
 	conf *external.Configuration) (err error) {
 
+	reportTimeFrameCollision := func() (err error) {
+		select {
+		case p.OutgoingRequestsTimeFrameCollisions <- requests.NewTimeFrameCollision(request.ObserverIndex()):
+		default:
+			err = errors.ChannelTransferringFailed
+		}
+
+		return
+	}
+
 	err = p.validateReceivedBlockCandidateDigest(request.Digest, tick, conf)
 	if err != nil {
+		if err == errors.InvalidTimeFrame {
+			_ = reportTimeFrameCollision()
+		}
+
 		return
 	}
 
@@ -413,7 +451,7 @@ func (p *Producer) generateBlockCandidateFromDigest(
 
 	// todo: move to separate method
 	getBlockReadyClaims := func() (claims *geo.Claims, err error) {
-		channel, errorsChannel := p.poolTSLs.BlockReadyInstancesByHashes(digest.ClaimsHashes.At)
+		channel, errorsChannel := p.poolClaims.BlockReadyInstancesByHashes(digest.ClaimsHashes.At)
 
 		claims = &geo.Claims{}
 		select {
@@ -423,7 +461,7 @@ func (p *Producer) generateBlockCandidateFromDigest(
 			}
 
 		case _ = <-errorsChannel:
-			err = errors.TSLsPoolReadFailed
+			err = errors.ClaimsPoolReadFailed
 
 		case <-time.After(time.Second):
 			err = errors.ClaimsPoolReadFailed
@@ -479,10 +517,10 @@ func (p *Producer) generateBlockCandidate(
 		return
 	}
 
-	if settings.Conf.Debug {
+	if settings.OutputBlocksProducerDebug {
 		p.log().WithFields(log.Fields{
-			"Index":        candidate.Index,
-			"TopBlockHash": candidate.Hash.Hex(),
+			"Index":     candidate.Index,
+			"BlockHash": candidate.Hash.Hex(),
 		}).Debug("Candidate block generated")
 	}
 
@@ -504,11 +542,11 @@ func (p *Producer) approveBlockCandidateAndPropagateSignature(
 		return err
 	}
 
-	if settings.Conf.Debug {
+	if settings.OutputBlocksProducerDebug {
 		p.log().WithFields(log.Fields{
-			"BlockHash":     p.nextBlock.Body.Hash.Hex(),
-			"Signature (S)": signature.S,
-			"Signature (R)": signature.R,
+			"BlockHash":  p.nextBlock.Body.Hash.Hex(),
+			"PubKey (S)": signature.S,
+			"PubKey (R)": signature.R,
 		}).Debug("Block digest approved")
 	}
 
@@ -522,7 +560,7 @@ func (p *Producer) approveBlockCandidateAndPropagateSignature(
 		err = errors.ChannelTransferringFailed
 	}
 
-	if settings.Conf.Debug {
+	if settings.OutputBlocksProducerDebug {
 		context := log.Fields{
 			"Index":   request.Digest.Index,
 			"Attempt": request.Digest.Attempt}
@@ -545,6 +583,12 @@ func (p *Producer) collectResponsesAndProcessConsensus(
 		case responseApprove := <-p.IncomingResponsesCandidateDigestApprove:
 			err = p.processIncomingCandidateDigestApprove(responseApprove, conf)
 			if err != nil {
+				if err == errors.InvalidBlockCandidateDigestApprove {
+					// Ignore current response, but process the rest.
+					err = nil
+					return
+				}
+
 				return
 			}
 
@@ -610,11 +654,13 @@ func (p *Producer) validateReceivedBlockCandidateDigest(
 	//       but not more than once per some period of time
 	//       (prevent malicious attack and ticker draining)
 	if digest.AuthorObserverIndex != tick.Index {
-		p.log().Debug(fmt.Sprint(
-			"validateReceivedBlockCandidateDigest: "+
-				"digest.AuthorObserverIndex != tick.Index, ", digest.AuthorObserverIndex, ", ", tick.Index))
+		if settings.OutputBlocksProducerDebug {
+			p.log().Debug(fmt.Sprint(
+				"validateReceivedBlockCandidateDigest: "+
+					"digest.AuthorObserverIndex != tick.Index, ", digest.AuthorObserverIndex, ", ", tick.Index))
+		}
 
-		return errors.InvalidBlockCandidateDigest
+		return errors.InvalidTimeFrame
 	}
 
 	// todo: implement logic
@@ -632,27 +678,33 @@ func (p *Producer) validateReceivedBlockCandidateDigest(
 
 	confHash := conf.Hash()
 	if bytes.Compare(digest.ObserversConfHash.Bytes[:], confHash.Bytes[:]) != 0 {
-		p.log().Debug(fmt.Sprint(
-			"validateReceivedBlockCandidateDigest: " +
-				"digest.ObserversConfHash != confHash, "))
+		if settings.OutputBlocksProducerDebug {
+			p.log().Debug(fmt.Sprint(
+				"validateReceivedBlockCandidateDigest: " +
+					"digest.ObserversConfHash != confHash, "))
+		}
 
 		return errors.InvalidBlockCandidateDigest
 	}
 
 	// Body block height must be greater that current chain height.
 	if digest.Index <= p.chain.Height()-1 {
-		p.log().Debug(fmt.Sprint(
-			"validateReceivedBlockCandidateDigest: "+
-				"digest.Index <= p.chain.Index()-1, ", digest.Index, ", ", p.chain.Height()-1))
+		if settings.OutputBlocksProducerDebug {
+			p.log().Debug(fmt.Sprint(
+				"validateReceivedBlockCandidateDigest: "+
+					"digest.Index <= p.chain.Index()-1, ", digest.Index, ", ", p.chain.Height()-1))
+		}
 
 		return errors.InvalidBlockCandidateDigest
 	}
 
 	if digest.ExternalChainHeight > conf.CurrentExternalChainHeight() {
-		p.log().Debug(fmt.Sprint(
-			"validateReceivedBlockCandidateDigest: "+
-				"digest.ExternalChainHeight > conf.CurrentExternalChainHeight(), ",
-			digest.ExternalChainHeight, ", ", conf.CurrentExternalChainHeight()))
+		if settings.OutputBlocksProducerDebug {
+			p.log().Debug(fmt.Sprint(
+				"validateReceivedBlockCandidateDigest: "+
+					"digest.ExternalChainHeight > conf.CurrentExternalChainHeight(), ",
+				digest.ExternalChainHeight, ", ", conf.CurrentExternalChainHeight()))
+		}
 
 		return errors.InvalidBlockCandidateDigest
 	}
@@ -675,17 +727,21 @@ func (p *Producer) validateCandidateDigestSignatureResponse(
 	response *responses.CandidateDigestApprove, conf *external.Configuration) (err error) {
 
 	if p.nextBlock == nil {
-		p.log().Debug(
-			"validateCandidateDigestSignatureResponse: " +
-				"There is no any pending proposed block")
+		if settings.OutputBlocksProducerDebug {
+			p.log().Debug(
+				"validateCandidateDigestSignatureResponse: " +
+					"There is no any pending proposed block")
+		}
 
 		return errors.InvalidBlockCandidateDigestApprove
 	}
 
 	if len(conf.Observers) < int(response.ObserverIndex()+1) {
-		p.log().Debug(
-			"validateCandidateDigestSignatureResponse: " +
-				"Current observers configuration has no observer with such index")
+		if settings.OutputBlocksProducerDebug {
+			p.log().Debug(
+				"validateCandidateDigestSignatureResponse: " +
+					"Current observers configuration has no observer with such index")
+		}
 
 		return errors.InvalidBlockCandidateDigestApprove
 	}
@@ -704,15 +760,17 @@ func (p *Producer) validateCandidateDigestSignatureResponse(
 		p.nextBlock.Body.Hash, response.Signature, remoteObserver.PubKey)
 
 	if !isValid {
-		p.log().WithFields(log.Fields{
-			"RemoteObserverIndex": response.ObserverIndex(),
-			"PubKey":              remoteObserver.PubKey.X.String() + "; " + remoteObserver.PubKey.Y.String(),
-			"Signature (S)":       response.Signature.S,
-			"Signature (R)":       response.Signature.R,
-			"BlockHash":           p.nextBlock.Body.Hash.Hex(),
-		}).Debug(
-			"validateCandidateDigestSignatureResponse: " +
-				"received signature is not related to the generated block, or observer")
+		if settings.OutputBlocksProducerDebug {
+			p.log().WithFields(log.Fields{
+				"RemoteObserverIndex": response.ObserverIndex(),
+				"PubKey":              remoteObserver.PubKey.X.String() + "; " + remoteObserver.PubKey.Y.String(),
+				"PubKey (S)":          response.Signature.S,
+				"PubKey (R)":          response.Signature.R,
+				"BlockHash":           p.nextBlock.Body.Hash.Hex(),
+			}).Debug(
+				"validateCandidateDigestSignatureResponse: " +
+					"received signature is not related to the generated block, or observer")
+		}
 
 		return errors.InvalidBlockCandidateDigestApprove
 	}
@@ -740,11 +798,11 @@ func (p *Producer) validateBlockSignaturesRequest(
 		observer := conf.Observers[i]
 		isValid := p.keystore.CheckExternalSignature(p.nextBlock.Body.Hash, *sig, observer.PubKey)
 		if isValid == false {
-			if settings.Conf.Debug {
+			if settings.OutputBlocksProducerDebug {
 				p.log().WithFields(log.Fields{
-					"BlockHash":     p.nextBlock.Body.Hash.Hex(),
-					"Signature (S)": sig.S,
-					"Signature (R)": sig.R,
+					"BlockHash":  p.nextBlock.Body.Hash.Hex(),
+					"PubKey (S)": sig.S,
+					"PubKey (R)": sig.R,
 				}).Debug("validateBlockSignaturesRequest: signature check failed")
 			}
 
@@ -793,6 +851,36 @@ func (p *Producer) distributeCollectedSignatures() (err error) {
 	return
 }
 
+func (p *Producer) processReceivedBlockHashBroadcast(request *requests.BlockHashBroadcast) (err error) {
+	lastBlock, e := p.chain.LastBlock()
+	if e != nil {
+		return e.Error()
+	}
+
+	if lastBlock.Body.Hash.Compare(request.Hash) {
+		return
+	}
+
+	p.log().Debug("Collision detected") // todo: add blocks hashes
+
+	// Load last generated block data
+	syncResult := <-p.composer.SyncChain(p.chain)
+	if syncResult.Error != nil {
+		err = errors.SyncFailed
+		return
+	}
+
+	// Chain must be recreated after sync
+	p.chain, err = NewChain(DataFilePath)
+	if err != nil {
+		// todo: report fatal error instead of panic
+		return err
+	}
+
+	p.log().Debug("Additional chain sync done") // todo: add blocks hashes
+	return
+}
+
 func (p *Producer) commitBlock(tick *ticker.EventTimeFrameEnd) (err error) {
 	if p.nextBlock == nil {
 		err = errors.AttemptToGenerateRedundantBlock
@@ -815,15 +903,15 @@ func (p *Producer) commitBlock(tick *ticker.EventTimeFrameEnd) (err error) {
 
 	dropClaimsFromPool := func() {
 		hashes := make([]hash.SHA256Container, 0, len(p.nextBlock.Body.Claims.At))
-		for _, tsl := range p.nextBlock.Body.Claims.At {
-			data, err := tsl.MarshalBinary()
+		for _, claim := range p.nextBlock.Body.Claims.At {
+			data, err := claim.MarshalBinary()
 			if err != nil {
 				return
 			}
 
 			hashes = append(hashes, hash.NewSHA256Container(data))
 		}
-		p.poolTSLs.DropInstances(hashes)
+		p.poolClaims.DropInstances(hashes)
 	}
 
 	err = p.chain.Append(p.nextBlock)
@@ -837,12 +925,20 @@ func (p *Producer) commitBlock(tick *ticker.EventTimeFrameEnd) (err error) {
 
 	p.log().WithFields(log.Fields{
 		"Index":                      committed.Body.Index,
-		"TopBlockHash":               committed.Body.Hash.Hex(),
+		"BlockHash":                  committed.Body.Hash.Hex(),
 		"ClaimsCount":                committed.Body.Claims.Count(),
 		"TSLsCount":                  committed.Body.TSLs.Count(),
 		"SignaturesCount":            committed.Signatures.Count(),
 		"SignaturesObserversIndexes": committed.Signatures.VotesIndexes(),
-	}).Debug("Block committed")
+	}).Info("Block committed")
+
+	// Generate event about next block generated.
+	select {
+	case p.OutgoingRequestsBlockHashBroadcast <- requests.NewBlockHashBroadcast(&p.nextBlock.Body.Hash):
+	default:
+		err = errors.ChannelTransferringFailed
+		return
+	}
 
 	p.nextBlock = nil
 	return
@@ -854,7 +950,7 @@ func (p *Producer) hasProposedBlock() bool {
 
 func (p *Producer) handleErrorIfAny(err error) {
 	if err != nil {
-		if settings.Conf.Debug {
+		if settings.OutputBlocksProducerDebug {
 			p.log().Debug(err)
 		}
 	}

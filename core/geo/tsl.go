@@ -1,25 +1,24 @@
 package geo
 
 import (
-	"geo-observers-blockchain/core/common"
 	"geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/common/types/transactions"
 	"geo-observers-blockchain/core/utils"
 )
 
 var (
-	TSLMinBinarySize = common.TransactionUUIDSize + transactions.MembersMinBinarySize
+	TSLMinBinarySize = transactions.TxIDBinarySize + TSLMembersMinBinarySize
 )
 
 type TSL struct {
 	TxUUID  *transactions.TxID
-	Members *transactions.Members
+	Members *TSLMembers
 }
 
 func NewTSL() *TSL {
 	return &TSL{
-		TxUUID:  transactions.NewTxID(),
-		Members: &transactions.Members{},
+		TxUUID:  transactions.NewEmptyTxID(),
+		Members: &TSLMembers{},
 	}
 }
 
@@ -48,13 +47,13 @@ func (t *TSL) UnmarshalBinary(data []byte) (err error) {
 	}
 
 	t.TxUUID = &transactions.TxID{}
-	err = t.TxUUID.UnmarshalBinary(data[:common.TransactionUUIDSize])
+	err = t.TxUUID.UnmarshalBinary(data[:transactions.TxIDBinarySize])
 	if err != nil {
 		return
 	}
 
-	t.Members = &transactions.Members{}
-	return t.Members.UnmarshalBinary(data[common.TransactionUUIDSize:])
+	t.Members = &TSLMembers{}
+	return t.Members.UnmarshalBinary(data[transactions.TxIDBinarySize:])
 }
 
 func (t *TSL) TxID() *transactions.TxID {

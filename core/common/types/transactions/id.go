@@ -3,29 +3,34 @@ package transactions
 import (
 	"bytes"
 	"geo-observers-blockchain/core/common/errors"
+	"geo-observers-blockchain/core/utils"
 	"github.com/google/uuid"
 )
 
 const (
-	TxIDBinarySize = 16
+	// TxID is composed from Final Block Number (8B) and TxUUID (16B).
+	TxIDBinarySize = 24
 )
 
 type TxID struct {
 	Bytes [TxIDBinarySize]byte
 }
 
-func NewTxID() *TxID {
+func NewEmptyTxID() *TxID {
 	return &TxID{}
 }
 
-func NewRandomTransactionUUID() (txID *TxID, err error) {
+func NewRandomTxID(blockNumber uint64) (txID *TxID, err error) {
 	uuidBinary, err := uuid.New().MarshalBinary()
 	if err != nil {
 		return nil, err
 	}
 
+	blockNumberBinary := utils.MarshalUint64(blockNumber)
+
 	txID = &TxID{}
-	copy(txID.Bytes[:], uuidBinary)
+	copy(txID.Bytes[0:8], blockNumberBinary)
+	copy(txID.Bytes[8:TxIDBinarySize], uuidBinary)
 	return
 }
 
@@ -43,4 +48,9 @@ func (u *TxID) UnmarshalBinary(data []byte) error {
 
 func (u *TxID) Compare(other *TxID) bool {
 	return bytes.Compare(u.Bytes[:], other.Bytes[:]) == 0
+}
+
+func (u *TxID) FinalBlockNumber() uint64 {
+	blockNumber, _ := utils.UnmarshalUint64(u.Bytes[0:8])
+	return blockNumber
 }

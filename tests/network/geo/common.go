@@ -12,8 +12,9 @@ import (
 	"time"
 )
 
-func ConnectToObserver(t *testing.T) (conn net.Conn) {
-	conn, err := net.Dial("tcp", fmt.Sprint(tests.ObserverHost, ":", tests.ObserverPort))
+func ConnectToObserver(t *testing.T, observerIndex int) (conn net.Conn) {
+	observer := tests.Observers[observerIndex]
+	conn, err := net.Dial("tcp", fmt.Sprint(observer.Host, ":", observer.GEOPort))
 	if err != nil {
 		t.Fatal("could not connect to observer: ", err)
 	}

@@ -50,6 +50,14 @@ var (
 	GEOTransactionMaxParticipantsCount = 700
 )
 
+var (
+	OutputNetworkObserversSenderDebug      = false
+	OutputNetworkObserversSenderWarnings   = false
+	OutputNetworkObserversReceiverDebug    = false
+	OutputNetworkObserversReceiverWarnings = false
+	OutputBlocksProducerDebug              = false
+)
+
 type networkInterface struct {
 	Host string `json:"host"`
 	Port uint16 `json:"port"`
@@ -111,10 +119,16 @@ func parseFlags() {
 
 		ObserversMaxCount = 4
 		ObserversConsensusCount = 3
-		AverageBlockGenerationTimeRange = time.Second * 5
+		AverageBlockGenerationTimeRange = time.Second * 10
 		TickerSynchronisationTimeRange = time.Second * 2
 		ComposerSynchronisationTimeRange = time.Second * 2
 		BlockGenerationSilencePeriod = time.Second * 2
+
+		OutputNetworkObserversSenderDebug = false
+		OutputNetworkObserversSenderWarnings = false
+		OutputNetworkObserversReceiverDebug = false
+		OutputNetworkObserversReceiverWarnings = false
+		OutputBlocksProducerDebug = true
 	}
 }
 

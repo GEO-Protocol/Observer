@@ -29,11 +29,12 @@ const (
 //       but IT IS NOT READY for the production usage.
 
 type Ticker struct {
-	OutgoingEventsTimeFrameEnd chan *EventTimeFrameEnd
-	OutgoingRequestsTimeFrames chan *requests.SynchronisationTimeFrames
-	IncomingRequestsTimeFrames chan *requests.SynchronisationTimeFrames
-	OutgoingResponsesTimeFrame chan *responses.TimeFrame
-	IncomingResponsesTimeFrame chan *responses.TimeFrame
+	OutgoingEventsTimeFrameEnd         chan *EventTimeFrameEnd
+	OutgoingRequestsTimeFrames         chan *requests.SynchronisationTimeFrames
+	IncomingRequestsTimeFrames         chan *requests.SynchronisationTimeFrames
+	OutgoingResponsesTimeFrame         chan *responses.TimeFrame
+	IncomingResponsesTimeFrame         chan *responses.TimeFrame
+	IncomingRequestsTimeFrameCollision chan *requests.TimeFrameCollision
 
 	// Internal events bus is used for controlling internal events loop.
 	// For example, in case if synchronisation with external observers is finished,
@@ -65,6 +66,9 @@ type Ticker struct {
 	// In case of current frame index reaches last observer -
 	// process begins from the beginning.
 	frame *EventTimeFrameEnd
+
+	// Invalid frames reports
+	ObserversReportedInvalidIndex map[uint16]bool
 }
 
 func New(reporter *external.Reporter) *Ticker {
@@ -80,8 +84,9 @@ func New(reporter *external.Reporter) *Ticker {
 
 		// On synchronization stage,
 		// ticker should be able to collect up to MAX OBSERVERS count of responses.
-		IncomingResponsesTimeFrame: make(chan *responses.TimeFrame, settings.ObserversMaxCount),
-		IncomingRequestsTimeFrames: make(chan *requests.SynchronisationTimeFrames, 1),
+		IncomingResponsesTimeFrame:         make(chan *responses.TimeFrame, settings.ObserversMaxCount),
+		IncomingRequestsTimeFrames:         make(chan *requests.SynchronisationTimeFrames, 1),
+		IncomingRequestsTimeFrameCollision: make(chan *requests.TimeFrameCollision, 1),
 
 		// Internal events bus is used to control and to interrupt internal events loop.
 		internalEventsBus: make(chan interface{}, 1),
@@ -92,6 +97,8 @@ func New(reporter *external.Reporter) *Ticker {
 			Index: kInitialTimeFrameIndex,
 			Conf:  initialConfiguration,
 		},
+
+		ObserversReportedInvalidIndex: make(map[uint16]bool),
 	}
 }
 
@@ -101,9 +108,9 @@ func (t *Ticker) Run(errors chan error) {
 
 		// todo: reconfigure frames on external observers configuration change
 
-		case timeFramesRequest := <-t.IncomingRequestsTimeFrames:
-			err := t.processTimeFrameRequest(timeFramesRequest)
-			errors2.SendErrorIfAny(err, errors)
+		//case timeFramesRequest := <-t.IncomingRequestsTimeFrames:
+		//	errors2.SendErrorIfAny(
+		//		t.processTimeFrameRequest(timeFramesRequest), errors)
 
 		case event := <-t.internalEventsBus:
 			err := t.processInternalEvent(event)
@@ -122,6 +129,10 @@ func (t *Ticker) Run(errors chan error) {
 		case timeFramesRequest := <-t.IncomingRequestsTimeFrames:
 			err := t.processTimeFrameRequest(timeFramesRequest)
 			errors2.SendErrorIfAny(err, errors)
+
+		case timeFramesCollisionRequest := <-t.IncomingRequestsTimeFrameCollision:
+			errors2.SendErrorIfAny(
+				t.processTimeFrameCollisionRequest(timeFramesCollisionRequest), errors)
 
 		case event := <-t.internalEventsBus:
 			err := t.processInternalEvent(event)
@@ -163,8 +174,6 @@ func (t *Ticker) Run(errors chan error) {
 }
 
 func (t *Ticker) syncWithOtherObservers() {
-	t.synchronisationDeadlineTimestamp = time.Now().Add(settings.TickerSynchronisationTimeRange)
-
 	setNextTick := func(offset time.Duration) {
 		t.nextFrameTimestamp = time.Now().Add(offset)
 
@@ -172,30 +181,9 @@ func (t *Ticker) syncWithOtherObservers() {
 		t.internalEventsBus <- &EventTickerStarted{}
 	}
 
-	collectResponses := func() {
-		for {
-			if time.Now().After(t.synchronisationDeadlineTimestamp) {
-				break
-			}
-
-			time.Sleep(time.Millisecond * 50)
-			if len(t.IncomingResponsesTimeFrame) == settings.ObserversMaxCount {
-				// There is no reason to wait longer.
-				// All responses has been collected.
-				break
-			}
-		}
-	}
-
-	// Request external observers for their current time frames data.
-	// Ticker would process all collected responses and
-	// would adjust it's own configuration in accordance to the majority.
-	t.OutgoingRequestsTimeFrames <- &requests.SynchronisationTimeFrames{}
-
 	t.log().Info("Synchronization started")
-	collectResponses()
 
-	nextFrameOffset, nextFrameIndex, responsesCollected, err := t.processMajorityOfFrameResponses()
+	nextFrameOffset, nextFrameIndex, responsesCollected, err := t.processSync()
 	if err == errors2.EmptySequence {
 		t.log().WithFields(
 			log.Fields{"ResponsesCount": 0}).Info("Synchronisation is done")
@@ -212,6 +200,37 @@ func (t *Ticker) syncWithOtherObservers() {
 		t.frame = &EventTimeFrameEnd{Index: nextFrameIndex}
 		setNextTick(time.Nanosecond * time.Duration(nextFrameOffset))
 	}
+}
+
+func (t *Ticker) processSync() (
+	timeOffsetNanoseconds uint64, nextFrameIndex uint16, collectedResponsesCount uint16, err error) {
+
+	// Request external observers for their current time frames data.
+	// Ticker would process all collected responses and
+	// would adjust it's own configuration in accordance to the majority.
+	select {
+	case t.OutgoingRequestsTimeFrames <- &requests.SynchronisationTimeFrames{}:
+	default:
+		err = errors2.ChannelTransferringFailed
+		return
+	}
+
+	t.synchronisationDeadlineTimestamp = time.Now().Add(settings.TickerSynchronisationTimeRange)
+
+	for {
+		if time.Now().After(t.synchronisationDeadlineTimestamp) {
+			break
+		}
+
+		time.Sleep(time.Millisecond * 50)
+		if len(t.IncomingResponsesTimeFrame) == settings.ObserversMaxCount {
+			// There is no reason to wait longer.
+			// All responses has been collected.
+			break
+		}
+	}
+
+	return t.processMajorityOfFrameResponses()
 }
 
 func (t *Ticker) processInternalEvent(event interface{}) error {
@@ -244,7 +263,15 @@ func (t *Ticker) processTimeFrameRequest(request *requests.SynchronisationTimeFr
 		return err
 	}
 
-	var response *responses.TimeFrame
+	var (
+		response          *responses.TimeFrame
+		nextFrameTimeLeft = t.nextFrameTimeLeft()
+	)
+
+	if nextFrameTimeLeft.Seconds() < 3 {
+		nextFrameTimeLeft += settings.AverageBlockGenerationTimeRange
+	}
+
 	if t.frame.Index == kInitialTimeFrameIndex {
 		response = responses.NewTimeFrame(
 			request,
@@ -269,6 +296,23 @@ func (t *Ticker) processTimeFrameRequest(request *requests.SynchronisationTimeFr
 	}
 }
 
+func (t *Ticker) processTimeFrameCollisionRequest(request *requests.TimeFrameCollision) (err error) {
+	if !t.isTickerRunning {
+		return
+	}
+
+	// todo: collision report might be used for draining the node.
+	//       add some filter map[observer] -> reports count per time.
+
+	t.ObserversReportedInvalidIndex[request.ObserverIndex()] = true
+	if len(t.ObserversReportedInvalidIndex) > settings.ObserversConsensusCount {
+		t.log().Debug("!!! Collision detected")
+		t.syncWithOtherObservers()
+	}
+
+	return
+}
+
 func (t *Ticker) processTick() {
 	nextFrameNumber := t.frame.Index + 1
 	if nextFrameNumber == uint16(settings.ObserversMaxCount) {
@@ -289,6 +333,9 @@ func (t *Ticker) processTick() {
 	default:
 		t.log().Error("tick transfer error")
 	}
+
+	// Drop all index claims, collected during previous round.
+	t.ObserversReportedInvalidIndex = make(map[uint16]bool)
 }
 
 // nextFrameTimeLeft returns time duration to the next time frame.
@@ -296,10 +343,6 @@ func (t *Ticker) processTick() {
 // each time the result would be les than the previous,
 // so it is ok for events to interrupt internal events loop.
 func (t *Ticker) nextFrameTimeLeft() (d time.Duration) {
-	defer func() {
-		t.log().Trace(d.Seconds())
-	}()
-
 	timeLeft := t.nextFrameTimestamp.Sub(time.Now())
 	if timeLeft <= 0 {
 		t.nextFrameTimestamp = time.Now().Add(

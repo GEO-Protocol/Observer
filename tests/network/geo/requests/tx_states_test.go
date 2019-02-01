@@ -26,7 +26,7 @@ func TestTxStateUnknownTransactions(t *testing.T) {
 		// Positive: one transaction ID requested.
 		// Expected result: response with state == "No Info".
 
-		txID, _ := transactions.NewRandomTransactionUUID()
+		txID, _ := transactions.NewRandomTxID(1)
 		response := requestTxStates(t, []*transactions.TxID{txID})
 
 		if len(response.States.At) != 1 {
@@ -42,10 +42,10 @@ func TestTxStateUnknownTransactions(t *testing.T) {
 		// Positive: several transaction IDs requested.
 		// Expected result: the same count of responses each with s == "No Info".
 
-		tx1ID, _ := transactions.NewRandomTransactionUUID()
-		tx2ID, _ := transactions.NewRandomTransactionUUID()
-		tx3ID, _ := transactions.NewRandomTransactionUUID()
-		tx4ID, _ := transactions.NewRandomTransactionUUID()
+		tx1ID, _ := transactions.NewRandomTxID(1)
+		tx2ID, _ := transactions.NewRandomTxID(1)
+		tx3ID, _ := transactions.NewRandomTxID(1)
+		tx4ID, _ := transactions.NewRandomTxID(1)
 		txIDs := []*transactions.TxID{tx1ID, tx2ID, tx3ID, tx4ID}
 
 		response := requestTxStates(t, txIDs)
@@ -65,7 +65,7 @@ func TestTxStateUnknownTransactions(t *testing.T) {
 		// Negative: no transaction IDs are present in request.
 		// Expected result: connection drop.
 
-		conn := testsCommon.ConnectToObserver(t)
+		conn := testsCommon.ConnectToObserver(t, 0)
 		defer conn.Close()
 
 		request := requests.NewTxStates([]*transactions.TxID{})
@@ -93,7 +93,7 @@ func TestTxStateTSLIsPresentInChain(t *testing.T) {
 }
 
 func requestTxStates(t *testing.T, TxIDs []*transactions.TxID) *responses.TxStates {
-	conn := testsCommon.ConnectToObserver(t)
+	conn := testsCommon.ConnectToObserver(t, 0)
 	defer conn.Close()
 
 	request := requests.NewTxStates(TxIDs)

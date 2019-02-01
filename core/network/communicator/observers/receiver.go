@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"geo-observers-blockchain/core/settings"
+
 	//"geo-observers-blockchain/core/chain"
 	"geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/geo"
@@ -110,7 +112,9 @@ func (r *Receiver) handleConnection(conn net.Conn, errors chan<- error) {
 
 			// In case of error - connection must be closed.
 			// No more read attempt must be performed.
-			r.log().Debug("connection will now be closed")
+			if settings.OutputNetworkObserversReceiverDebug {
+				r.log().Debug("connection will now be closed")
+			}
 			return
 		}
 	}
@@ -150,9 +154,11 @@ func (r *Receiver) receiveDataPackage(reader *bufio.Reader) (data []byte, err er
 func (r *Receiver) parseAndRouteData(data []byte) (err error) {
 
 	processRequest := func(request requests.Request) (err error) {
-		r.log().WithFields(log.Fields{
-			"Type": reflect.TypeOf(request).String(),
-		}).Debug("Received")
+		if settings.OutputNetworkObserversReceiverDebug {
+			r.log().WithFields(log.Fields{
+				"Type": reflect.TypeOf(request).String(),
+			}).Debug("Received")
+		}
 
 		err = request.UnmarshalBinary(data[1:])
 		if err != nil {
@@ -164,18 +170,22 @@ func (r *Receiver) parseAndRouteData(data []byte) (err error) {
 		default:
 			// WARN: do not return error!
 			// Otherwise the connection would be closed.
-			r.log().WithFields(log.Fields{
-				"Type": reflect.TypeOf(r).String(),
-			}).Error("Can't transfer r.Requests")
+			if settings.OutputNetworkObserversReceiverDebug {
+				r.log().WithFields(log.Fields{
+					"Type": reflect.TypeOf(r).String(),
+				}).Error("Can't transfer r.Requests")
+			}
 		}
 
 		return
 	}
 
 	processResponse := func(response responses.Response, customHandler func(responses.Response)) (err error) {
-		r.log().WithFields(log.Fields{
-			"Type": reflect.TypeOf(response).String(),
-		}).Debug("Received")
+		if settings.OutputNetworkObserversReceiverDebug {
+			r.log().WithFields(log.Fields{
+				"Type": reflect.TypeOf(response).String(),
+			}).Debug("Received")
+		}
 
 		err = response.UnmarshalBinary(data[1:])
 		if err != nil {
@@ -243,6 +253,12 @@ func (r *Receiver) parseAndRouteData(data []byte) (err error) {
 	case constants.DataTypeResponseChainTop:
 		return processResponse(&responses.ChainTop{}, nil)
 
+	case constants.DataTypeRequestTimeFrameCollision:
+		return processRequest(&requests.TimeFrameCollision{})
+
+	case constants.DataTypeRequestBlockHashBroadcast:
+		return processRequest(&requests.BlockHashBroadcast{})
+
 	default:
 		return errors.UnexpectedDataType
 	}
@@ -259,12 +275,14 @@ func (r *Receiver) sendEvent(channel chan interface{}, event interface{}) {
 }
 
 func (r *Receiver) logIngress(bytesReceived int, conn net.Conn) {
-	r.log().WithFields(log.Fields{
-		"Bytes":     bytesReceived,
-		"Addressee": conn.RemoteAddr(),
-	}).Debug("[TX <=]")
+	if settings.OutputNetworkObserversReceiverDebug {
+		r.log().WithFields(log.Fields{
+			"Bytes":     bytesReceived,
+			"Addressee": conn.RemoteAddr(),
+		}).Debug("[TX <=]")
+	}
 }
 
 func (r *Receiver) log() *log.Entry {
-	return log.WithFields(log.Fields{"prefix": "Network/Observers/Communicator"})
+	return log.WithFields(log.Fields{"prefix": "Network/Observers/Receiver"})
 }

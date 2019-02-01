@@ -1,4 +1,4 @@
-package transactions
+package geo
 
 import (
 	"geo-observers-blockchain/core/common"
@@ -8,22 +8,22 @@ import (
 )
 
 const (
-	MemberBinarySize = common.Uint16ByteSize + lamport.SignatureBytesSize
+	TSLMemberBinarySize = common.Uint16ByteSize + lamport.SignatureBytesSize
 )
 
-type Member struct {
+type TSLMember struct {
 	ID        uint16
 	Signature *lamport.Signature
 }
 
-func NewMember(memberID uint16) *Member {
-	return &Member{
+func NewTSLMember(memberID uint16) *TSLMember {
+	return &TSLMember{
 		ID:        memberID,
 		Signature: &lamport.Signature{},
 	}
 }
 
-func (member *Member) MarshalBinary() (data []byte, err error) {
+func (member *TSLMember) MarshalBinary() (data []byte, err error) {
 	idBinary := utils.MarshalUint16(member.ID)
 	signatureBinary, err := member.Signature.MarshalBinary()
 	if err != nil {
@@ -33,8 +33,8 @@ func (member *Member) MarshalBinary() (data []byte, err error) {
 	return utils.ChainByteSlices(idBinary, signatureBinary), nil
 }
 
-func (member *Member) UnmarshalBinary(data []byte) (err error) {
-	if len(data) < MemberBinarySize {
+func (member *TSLMember) UnmarshalBinary(data []byte) (err error) {
+	if len(data) < TSLMemberBinarySize {
 		return errors.InvalidDataFormat
 	}
 
