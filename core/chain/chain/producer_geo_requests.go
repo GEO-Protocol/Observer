@@ -112,7 +112,7 @@ func (p *Producer) processGEOTxStatesRequest(req *geoRequests.TxsStates) (err er
 	if req == nil || len(req.TxIDs.At) == 0 {
 		return errors.InvalidParameter
 	}
-	response := geoResponses.NewTxStates()
+	response := geoResponses.NewTxStates(p.chain.Height())
 
 	appendClaimInPoolState := func(TxID *transactions.TxID) (err error) {
 		resultsChannel, errorsChannel := p.poolTSLs.ContainsInstance(TxID)

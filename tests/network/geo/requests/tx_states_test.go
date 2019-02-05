@@ -99,7 +99,7 @@ func requestTxStates(t *testing.T, TxIDs []*transactions.TxID) *responses.TxStat
 	request := requests.NewTxStates(TxIDs)
 	testsCommon.SendRequest(t, request, conn)
 
-	response := responses.NewTxStates()
+	response := &responses.TxStates{}
 	testsCommon.GetResponse(t, response, conn)
 	return response
 }

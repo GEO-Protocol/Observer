@@ -24,6 +24,12 @@ var (
 	DataTypeRequestBlockHashBroadcast uint8 = 139
 
 	DataTypeRequestTimeFrameCollision uint8 = 140
+
+	// Errors
+	DataTypeRequestAccepted = 200
+	DataTypeInternalError   = 253
+	DataTypeRequestRejected = 254
+	DataTypeInvalidRequest  = 255
 )
 
 var (

@@ -26,7 +26,7 @@ func GetResponse(t *testing.T, response encoding.BinaryUnmarshaler, conn net.Con
 	_ = conn.SetReadDeadline(time.Now().Add(time.Second * 3))
 	reader := bufio.NewReader(conn)
 
-	messageSizeBinary := []byte{0, 0, 0, 0}
+	messageSizeBinary := make([]byte, 4, 4)
 	bytesRead, err := reader.Read(messageSizeBinary)
 	if err != nil {
 		t.Fatal(err)

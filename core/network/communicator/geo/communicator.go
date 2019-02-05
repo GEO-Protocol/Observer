@@ -8,6 +8,7 @@ import (
 	"geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/network/communicator/geo/api/v0"
 	geoRequests "geo-observers-blockchain/core/network/communicator/geo/api/v0/common"
+	"geo-observers-blockchain/core/network/communicator/observers/constants"
 	"geo-observers-blockchain/core/utils"
 	log "github.com/sirupsen/logrus"
 	"net"
@@ -63,19 +64,17 @@ func (r *Communicator) Run(host string, port uint16, globalErrorsFlow chan<- err
 }
 
 func (r *Communicator) handleConnection(conn net.Conn, globalErrorsFlow chan<- error) {
-	processError := func(err errors.E) {
-		conn.Close()
-	}
-
 	message, err := r.receiveData(conn)
 	if err != nil {
-		processError(err)
+		r.sendError(conn, constants.DataTypeInvalidRequest)
+		conn.Close()
 		return
 	}
 
 	request, e := v0.ParseRequest(message)
 	if e != nil {
-		processError(e)
+		r.sendError(conn, constants.DataTypeInvalidRequest)
+		conn.Close()
 		return
 	}
 
@@ -94,6 +93,7 @@ func (r *Communicator) handleRequest(conn net.Conn, request geoRequests.Request,
 
 	default:
 		globalErrorsFlow <- errors.ChannelTransferringFailed
+		r.sendError(conn, constants.DataTypeRequestRejected)
 	}
 }
 
@@ -112,8 +112,14 @@ func (r *Communicator) handleResponseIfAny(conn net.Conn, request geoRequests.Re
 		}
 	}
 
+	processError := func(err error) {
+		globalErrorsFlow <- err
+		r.sendError(conn, constants.DataTypeInternalError)
+	}
+
 	if request.ResponseChannel() == nil {
 		// Request does not assumes any response.
+		r.sendCode(conn, constants.DataTypeRequestAccepted)
 		return
 	}
 
@@ -125,11 +131,10 @@ func (r *Communicator) handleResponseIfAny(conn net.Conn, request geoRequests.Re
 		processResponseSending(response)
 
 	case err := <-request.ErrorsChannel():
-		globalErrorsFlow <- err
-		return
+		processError(err)
 
 	case <-time.After(time.Second * 10):
-		globalErrorsFlow <- errors.NoResponseReceived
+		processError(errors.NoResponseReceived)
 	}
 }
 
@@ -197,6 +202,16 @@ func (r *Communicator) sendData(conn net.Conn, data []byte) (e errors.E) {
 
 	r.logEgress(totalBytesSent, conn)
 	return
+}
+
+func (r *Communicator) sendError(conn net.Conn, code int) {
+	_, _ = conn.Write([]byte{0, 0, 0, 1, byte(code)})
+	r.logEgress(5, conn)
+}
+
+func (r *Communicator) sendCode(conn net.Conn, code int) {
+	_, _ = conn.Write([]byte{0, 0, 0, 1, byte(code)})
+	r.logEgress(5, conn)
 }
 
 func (r *Communicator) logIngress(bytesReceived int, conn net.Conn) {
