@@ -33,7 +33,7 @@ func (states *TxStates) UnmarshalBinary(data []byte) (err error) {
 	states.CurrentBlockNumber, err = utils.UnmarshalUint64(data[:common.Uint64ByteSize])
 
 	states.States = &transactions.TxStates{}
-	err = states.States.UnmarshalBinary(data[:common.Uint64ByteSize])
+	err = states.States.UnmarshalBinary(data[common.Uint64ByteSize:])
 	if err != nil {
 		return
 	}

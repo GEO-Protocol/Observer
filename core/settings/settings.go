@@ -54,6 +54,7 @@ var (
 	OutputNetworkObserversSenderDebug      = false
 	OutputNetworkObserversSenderWarnings   = false
 	OutputNetworkObserversReceiverDebug    = false
+	OutputNetworkGEOCommunicatorDebug      = false
 	OutputNetworkObserversReceiverWarnings = false
 	OutputBlocksProducerDebug              = false
 )

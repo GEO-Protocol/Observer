@@ -24,7 +24,7 @@ type Core struct {
 	keystore              *keystore.KeyStore
 	ticker                *ticker.Ticker
 	observersConfReporter *external.Reporter
-	receiverGEONodes      *geoNet.Communicator
+	communicatorGEONodes  *geoNet.Communicator
 	receiverObservers     *observersNet.Receiver
 	senderObservers       *observersNet.Sender
 	poolClaims            *pool.Handler
@@ -51,7 +51,7 @@ func New() (core *Core, err error) {
 		observersConfReporter: reporter,
 		senderObservers:       observersNet.NewSender(reporter),
 		receiverObservers:     observersNet.NewReceiver(),
-		receiverGEONodes:      geoNet.New(),
+		communicatorGEONodes:  geoNet.New(),
 		poolClaims:            poolClaims,
 		poolTSLs:              poolTSLs,
 		blocksProducer:        producer,
@@ -81,11 +81,7 @@ func (c *Core) Run() {
 }
 
 func (c *Core) initNetwork(errors chan error) {
-	go c.receiverGEONodes.Run(
-		settings.Conf.Nodes.Network.Host,
-		settings.Conf.Nodes.Network.Port,
-		errors)
-	c.exitIfError(errors)
+	go c.communicatorGEONodes.Run(errors)
 
 	go c.receiverObservers.Run(
 		settings.Conf.Observers.Network.Host,
@@ -255,7 +251,7 @@ func (c *Core) dispatchDataFlows(globalErrorsFlow chan error) {
 			}
 
 		// GEO Node requests processing
-		case geoNodeRequest := <-c.receiverGEONodes.Requests:
+		case geoNodeRequest := <-c.communicatorGEONodes.Requests:
 			err := c.processIncomingGEONodeRequest(geoNodeRequest)
 			if err != nil {
 				processError(err)

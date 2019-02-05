@@ -9,6 +9,7 @@ import (
 	"geo-observers-blockchain/core/network/communicator/geo/api/v0"
 	geoRequests "geo-observers-blockchain/core/network/communicator/geo/api/v0/common"
 	"geo-observers-blockchain/core/network/communicator/observers/constants"
+	"geo-observers-blockchain/core/settings"
 	"geo-observers-blockchain/core/utils"
 	log "github.com/sirupsen/logrus"
 	"net"
@@ -21,113 +22,126 @@ const (
 	MinMessageSize = 1
 )
 
+// Communicator is used to receive requests from GEO Nodes and transfer relevant responses backward.
+// Uses TCP protocol for communication.
+// handles each one request in it's own goroutine.
 type Communicator struct {
 	Requests chan geoRequests.Request
+
+	errorsFlow chan<- error
 }
 
+// Communicator creates new instance of Communicator
+// with default requests queue set to 256 slots.
 func New() *Communicator {
 	return &Communicator{
 		Requests: make(chan geoRequests.Request, 256),
 	}
 }
 
-// todo: replace `globalErrorsFlow chan<- error` by `globalErrorsFlow chan<- errors.E`
-func (r *Communicator) Run(host string, port uint16, globalErrorsFlow chan<- error) {
-	listener, err := net.Listen("tcp", fmt.Sprint(host, ":", port))
+// Run launches communicator and communication flow.
+// ToDo: Replace `errorsFlow chan<- error` by `errorsFlow chan<- errors.E`
+func (c *Communicator) Run(globalErrorFlow chan<- error) {
+	c.errorsFlow = globalErrorFlow
+
+	netInterface := fmt.Sprint(settings.Conf.Nodes.Network.Host, ":", settings.Conf.Nodes.Network.Port)
+	listener, err := net.Listen("tcp", netInterface)
 	if err != nil {
-		globalErrorsFlow <- err
+		c.errorsFlow <- err
 		return
 	}
 
 	//noinspection GoUnhandledErrorResult
 	defer listener.Close()
 
-	// Inform outer scope that initialisation was performed well
-	// and no errors has been occurred.
-	globalErrorsFlow <- nil
-
-	r.log().WithFields(log.Fields{
-		"Host": host,
-		"Port": port,
+	c.log().WithFields(log.Fields{
+		"Host": settings.Conf.Nodes.Network.Host,
+		"Port": settings.Conf.Nodes.Network.Port,
 	}).Info("Started")
 
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
 			// todo: throw fatal error
-			globalErrorsFlow <- err
+			c.errorsFlow <- err
 			return
 		}
 
-		go r.handleConnection(conn, globalErrorsFlow)
+		go c.handleConnection(conn)
 	}
 }
 
-func (r *Communicator) handleConnection(conn net.Conn, globalErrorsFlow chan<- error) {
-	message, err := r.receiveData(conn)
-	if err != nil {
-		r.sendError(conn, constants.DataTypeInvalidRequest)
-		conn.Close()
-		return
-	}
-
-	request, e := v0.ParseRequest(message)
-	if e != nil {
-		r.sendError(conn, constants.DataTypeInvalidRequest)
-		conn.Close()
-		return
-	}
-
-	go r.handleRequest(conn, request, globalErrorsFlow)
-}
-
-func (r *Communicator) handleRequest(conn net.Conn, request geoRequests.Request, globalErrorsFlow chan<- error) {
+// handleConnection tries to parse incoming data, create request and send it for the further processing.
+// Drops the connection with corresponding error in case of failure.
+// Closes connection after each request processed.
+func (c *Communicator) handleConnection(conn net.Conn) {
 	defer conn.Close()
 
+	data, err := c.receiveData(conn)
+	if err != nil {
+		c.respondError(conn, constants.DataTypeInvalidRequest)
+		return
+	}
+
+	request, e := v0.ParseRequest(data)
+	if e != nil {
+		c.respondError(conn, constants.DataTypeInvalidRequest)
+		return
+	}
+
+	c.handleRequest(conn, request)
+}
+
+// handleRequest sends request for further dispatching by the core.
+// Reports error in global errors flow in case if core is busy and request can't be transferred via channel.
+func (c *Communicator) handleRequest(conn net.Conn, request geoRequests.Request) {
 	select {
-	case r.Requests <- request:
-		r.handleResponseIfAny(conn, request, globalErrorsFlow)
-		r.log().WithFields(log.Fields{
-			"Type": reflect.TypeOf(request).String(),
-		}).Debug("Transferred to core")
+	case c.Requests <- request:
+		if settings.OutputNetworkGEOCommunicatorDebug {
+			c.log().WithField("Type", reflect.TypeOf(request).String()).Debug("Transferred to core")
+		}
+		c.handleResponseIfAny(conn, request)
 
 	default:
-		globalErrorsFlow <- errors.ChannelTransferringFailed
-		r.sendError(conn, constants.DataTypeRequestRejected)
+		c.errorsFlow <- errors.ChannelTransferringFailed
+		c.respondError(conn, constants.DataTypeRequestRejected)
 	}
 }
 
-func (r *Communicator) handleResponseIfAny(conn net.Conn, request geoRequests.Request, globalErrorsFlow chan<- error) {
+// handleResponseIfAny checks if request assumes response and if so - tries to send it to the client.
+// ToDo: Handle case when claim or TSL wasn't accepted for any reason.
+//       Send appropriate response to the client.
+func (c *Communicator) handleResponseIfAny(conn net.Conn, request geoRequests.Request) {
 	processResponseSending := func(response encoding.BinaryMarshaler) {
 		binaryData, err := response.MarshalBinary()
 		if err != nil {
-			globalErrorsFlow <- err
+			c.errorsFlow <- err
 			return
 		}
 
-		e := r.sendData(conn, binaryData)
+		e := c.sendData(conn, binaryData)
 		if e != nil {
-			globalErrorsFlow <- e.Error()
+			c.errorsFlow <- e.Error()
 			return
 		}
 	}
 
 	processError := func(err error) {
-		globalErrorsFlow <- err
-		r.sendError(conn, constants.DataTypeInternalError)
+		c.errorsFlow <- err
+		c.respondError(conn, constants.DataTypeInternalError)
 	}
 
 	if request.ResponseChannel() == nil {
 		// Request does not assumes any response.
-		r.sendCode(conn, constants.DataTypeRequestAccepted)
+		c.sendCode(conn, constants.DataTypeRequestAccepted)
 		return
 	}
 
 	select {
 	case response := <-request.ResponseChannel():
-		r.log().WithFields(log.Fields{
-			"Type": reflect.TypeOf(response).String(),
-		}).Debug("Enqueued for sending")
+		if settings.OutputNetworkGEOCommunicatorDebug {
+			c.log().WithField("Type", reflect.TypeOf(response).String()).Debug("Transferred to core")
+		}
 		processResponseSending(response)
 
 	case err := <-request.ErrorsChannel():
@@ -138,7 +152,8 @@ func (r *Communicator) handleResponseIfAny(conn net.Conn, request geoRequests.Re
 	}
 }
 
-func (r *Communicator) receiveData(conn net.Conn) (data []byte, e errors.E) {
+// receiveData fetches data from the socket and tires to combine it into a message.
+func (c *Communicator) receiveData(conn net.Conn) (data []byte, e errors.E) {
 	reader := bufio.NewReader(conn)
 
 	messageSizeBinary := []byte{0, 0, 0, 0}
@@ -175,13 +190,13 @@ func (r *Communicator) receiveData(conn net.Conn) (data []byte, e errors.E) {
 
 		offset += uint32(bytesReceived)
 		if offset == messageSize {
-			r.logIngress(len(data), conn)
+			c.logIngress(len(data), conn)
 			return data, nil
 		}
 	}
 }
 
-func (r *Communicator) sendData(conn net.Conn, data []byte) (e errors.E) {
+func (c *Communicator) sendData(conn net.Conn, data []byte) (e errors.E) {
 	dataSize := len(data)
 	dataSizeBinary := utils.MarshalUint32(uint32(dataSize))
 	data = append(dataSizeBinary, data...)
@@ -200,28 +215,28 @@ func (r *Communicator) sendData(conn net.Conn, data []byte) (e errors.E) {
 		totalBytesSent += bytesWritten
 	}
 
-	r.logEgress(totalBytesSent, conn)
+	c.logEgress(totalBytesSent, conn)
 	return
 }
 
-func (r *Communicator) sendError(conn net.Conn, code int) {
+func (c *Communicator) respondError(conn net.Conn, code int) {
 	_, _ = conn.Write([]byte{0, 0, 0, 1, byte(code)})
-	r.logEgress(5, conn)
+	c.logEgress(5, conn)
 }
 
-func (r *Communicator) sendCode(conn net.Conn, code int) {
+func (c *Communicator) sendCode(conn net.Conn, code int) {
 	_, _ = conn.Write([]byte{0, 0, 0, 1, byte(code)})
-	r.logEgress(5, conn)
+	c.logEgress(5, conn)
 }
 
-func (r *Communicator) logIngress(bytesReceived int, conn net.Conn) {
-	r.log().Debug("[TX<=] ", bytesReceived, "B, ", conn.RemoteAddr())
+func (c *Communicator) logIngress(bytesReceived int, conn net.Conn) {
+	c.log().Debug("[TX<=] ", bytesReceived, "B, ", conn.RemoteAddr())
 }
 
-func (r *Communicator) logEgress(bytesSent int, conn net.Conn) {
-	r.log().Debug("[TX=>] ", bytesSent, "B, ", conn.RemoteAddr())
+func (c *Communicator) logEgress(bytesSent int, conn net.Conn) {
+	c.log().Debug("[TX=>] ", bytesSent, "B, ", conn.RemoteAddr())
 }
 
-func (r *Communicator) log() *log.Entry {
+func (c *Communicator) log() *log.Entry {
 	return log.WithFields(log.Fields{"prefix": "Network/GEO"})
 }
