@@ -8,7 +8,7 @@ import (
 )
 
 type TSLAppend struct {
-	*common.RequestWithoutResponse
+	common.RequestWithoutResponse
 	TSL *geo.TSL
 }
 
@@ -26,13 +26,13 @@ func (request *TSLAppend) UnmarshalBinary(data []byte) (err error) {
 // --------------------------------------------------------------------------------------------------------------------
 
 type TSLGet struct {
-	*common.RequestWithResponse
+	common.RequestWithResponse
 	TxID *transactions.TxID
 }
 
 func NewTSLGet(TxID *transactions.TxID) *TSLGet {
 	return &TSLGet{
-		RequestWithResponse: common.NewRequestWithResponse(),
+		RequestWithResponse: *(common.NewRequestWithResponse()),
 		TxID:                TxID,
 	}
 }
@@ -44,7 +44,7 @@ func (request *TSLGet) MarshalBinary() (data []byte, err error) {
 }
 
 func (request *TSLGet) UnmarshalBinary(data []byte) (err error) {
-	request.RequestWithResponse = common.NewRequestWithResponse()
+	request.RequestWithResponse = *(common.NewRequestWithResponse())
 	request.TxID = &transactions.TxID{}
 	return request.TxID.UnmarshalBinary(data)
 }
@@ -52,13 +52,13 @@ func (request *TSLGet) UnmarshalBinary(data []byte) (err error) {
 // --------------------------------------------------------------------------------------------------------------------
 
 type TSLIsPresent struct {
-	*common.RequestWithResponse
+	common.RequestWithResponse
 	TxID *transactions.TxID
 }
 
 func NewTSLIsPresent(TxID *transactions.TxID) *TSLIsPresent {
 	return &TSLIsPresent{
-		RequestWithResponse: common.NewRequestWithResponse(),
+		RequestWithResponse: *(common.NewRequestWithResponse()),
 		TxID:                TxID,
 	}
 }
@@ -70,7 +70,7 @@ func (request *TSLIsPresent) MarshalBinary() (data []byte, err error) {
 }
 
 func (request *TSLIsPresent) UnmarshalBinary(data []byte) (err error) {
-	request.RequestWithResponse = common.NewRequestWithResponse()
+	request.RequestWithResponse = *(common.NewRequestWithResponse())
 	request.TxID = &transactions.TxID{}
 	return request.TxID.UnmarshalBinary(data)
 }

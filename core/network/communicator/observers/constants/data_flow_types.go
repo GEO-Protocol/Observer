@@ -2,6 +2,7 @@ package constants
 
 var (
 	// Range 0..63 is reserved for the future needs.
+	DataTypeRequestAccepted = 1
 
 	// Requests and responses
 	DataTypeRequestTimeFrames uint8 = 128
@@ -26,7 +27,6 @@ var (
 	DataTypeRequestTimeFrameCollision uint8 = 140
 
 	// Errors
-	DataTypeRequestAccepted = 200
 	DataTypeInternalError   = 253
 	DataTypeRequestRejected = 254
 	DataTypeInvalidRequest  = 255

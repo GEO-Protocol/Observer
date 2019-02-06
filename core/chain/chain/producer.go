@@ -71,27 +71,27 @@ func NewProducer(
 
 	producer = &Producer{
 		// Observers interface
-		OutgoingRequestsCandidateDigestBroadcast: make(chan *requests.CandidateDigestBroadcast, 1),
+		OutgoingRequestsCandidateDigestBroadcast: make(chan *requests.CandidateDigestBroadcast, 128),
 		IncomingRequestsCandidateDigest:          make(chan *requests.CandidateDigestBroadcast, settings.ObserversMaxCount-1),
-		OutgoingResponsesCandidateDigestApprove:  make(chan *responses.CandidateDigestApprove, 1),
+		OutgoingResponsesCandidateDigestApprove:  make(chan *responses.CandidateDigestApprove, 128),
 		IncomingResponsesCandidateDigestApprove:  make(chan *responses.CandidateDigestApprove, settings.ObserversMaxCount-1),
-		OutgoingRequestsBlockSignaturesBroadcast: make(chan *requests.BlockSignaturesBroadcast, 1),
-		IncomingRequestsBlockSignatures:          make(chan *requests.BlockSignaturesBroadcast, 1),
-		IncomingRequestsChainTop:                 make(chan *requests.ChainTop, 1),
-		OutgoingResponsesChainTop:                make(chan *responses.ChainTop, 1),
-		OutgoingRequestsTimeFrameCollisions:      make(chan *requests.TimeFrameCollision, 1),
-		OutgoingRequestsBlockHashBroadcast:       make(chan *requests.BlockHashBroadcast, 1),
-		IncomingRequestsBlockHashBroadcast:       make(chan *requests.BlockHashBroadcast, 1),
+		OutgoingRequestsBlockSignaturesBroadcast: make(chan *requests.BlockSignaturesBroadcast, 128),
+		IncomingRequestsBlockSignatures:          make(chan *requests.BlockSignaturesBroadcast, 128),
+		IncomingRequestsChainTop:                 make(chan *requests.ChainTop, 128),
+		OutgoingResponsesChainTop:                make(chan *responses.ChainTop, 128),
+		OutgoingRequestsTimeFrameCollisions:      make(chan *requests.TimeFrameCollision, 128),
+		OutgoingRequestsBlockHashBroadcast:       make(chan *requests.BlockHashBroadcast, 128),
+		IncomingRequestsBlockHashBroadcast:       make(chan *requests.BlockHashBroadcast, 128),
 
 		// GEO Node interface
-		GEORequestsLastBlockHeight: make(chan *geoRequests.LastBlockNumber, 1),
-		GEORequestsClaimIsPresent:  make(chan *geoRequests.ClaimIsPresent, 1),
-		GEORequestsTSLIsPresent:    make(chan *geoRequests.TSLIsPresent, 1),
-		GEORequestsTSLGet:          make(chan *geoRequests.TSLGet, 1),
-		GEORequestsTxStates:        make(chan *geoRequests.TxsStates, 1),
+		GEORequestsLastBlockHeight: make(chan *geoRequests.LastBlockNumber, 128),
+		GEORequestsClaimIsPresent:  make(chan *geoRequests.ClaimIsPresent, 128),
+		GEORequestsTSLIsPresent:    make(chan *geoRequests.TSLIsPresent, 128),
+		GEORequestsTSLGet:          make(chan *geoRequests.TSLGet, 128),
+		GEORequestsTxStates:        make(chan *geoRequests.TxsStates, 128),
 
 		// Internal interface
-		IncomingEventTimeFrameEnded: make(chan *ticker.EventTimeFrameEnd, 1),
+		IncomingEventTimeFrameEnded: make(chan *ticker.EventTimeFrameEnd, 128),
 
 		reporter:   reporter,
 		keystore:   keystore,

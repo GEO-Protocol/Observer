@@ -40,6 +40,7 @@ func GetResponse(t *testing.T, response encoding.BinaryUnmarshaler, conn net.Con
 	if err != nil {
 		t.Fatal(err)
 	}
+	println(messageSize)
 
 	var offset uint32 = 0
 	data := make([]byte, messageSize, messageSize)

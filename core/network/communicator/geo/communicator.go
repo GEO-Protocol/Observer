@@ -156,7 +156,7 @@ func (c *Communicator) handleResponseIfAny(conn net.Conn, request geoRequests.Re
 func (c *Communicator) receiveData(conn net.Conn) (data []byte, e errors.E) {
 	reader := bufio.NewReader(conn)
 
-	messageSizeBinary := []byte{0, 0, 0, 0}
+	messageSizeBinary := make([]byte, 4)
 	bytesRead, err := reader.Read(messageSizeBinary)
 	if err != nil {
 		e = errors.AppendStackTrace(err)
@@ -220,12 +220,12 @@ func (c *Communicator) sendData(conn net.Conn, data []byte) (e errors.E) {
 }
 
 func (c *Communicator) respondError(conn net.Conn, code int) {
-	_, _ = conn.Write([]byte{0, 0, 0, 1, byte(code)})
+	_, _ = conn.Write([]byte{1, 0, 0, 0, byte(code)})
 	c.logEgress(5, conn)
 }
 
 func (c *Communicator) sendCode(conn net.Conn, code int) {
-	_, _ = conn.Write([]byte{0, 0, 0, 1, byte(code)})
+	_, _ = conn.Write([]byte{1, 0, 0, 0, byte(code)})
 	c.logEgress(5, conn)
 }
 

@@ -8,7 +8,7 @@ import (
 )
 
 type ClaimAppend struct {
-	*common.RequestWithoutResponse
+	common.RequestWithoutResponse
 	Claim *geo.Claim
 }
 
@@ -26,13 +26,13 @@ func (request *ClaimAppend) UnmarshalBinary(data []byte) (err error) {
 // --------------------------------------------------------------------------------------------------------------------
 
 type ClaimIsPresent struct {
-	*common.RequestWithResponse
+	common.RequestWithResponse
 	TxID *transactions.TxID
 }
 
 func NewClaimIsPresent(TxID *transactions.TxID) *ClaimIsPresent {
 	return &ClaimIsPresent{
-		RequestWithResponse: common.NewRequestWithResponse(),
+		RequestWithResponse: *(common.NewRequestWithResponse()),
 		TxID:                TxID,
 	}
 }
@@ -44,7 +44,7 @@ func (request *ClaimIsPresent) MarshalBinary() (data []byte, err error) {
 }
 
 func (request *ClaimIsPresent) UnmarshalBinary(data []byte) (err error) {
-	request.RequestWithResponse = common.NewRequestWithResponse()
+	request.RequestWithResponse = *(common.NewRequestWithResponse())
 	request.TxID = transactions.NewEmptyTxID()
 	return request.TxID.UnmarshalBinary(data)
 }

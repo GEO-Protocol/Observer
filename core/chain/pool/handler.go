@@ -2,6 +2,7 @@ package pool
 
 import (
 	"encoding"
+	"fmt"
 	"geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/common/types/hash"
 	"geo-observers-blockchain/core/common/types/transactions"
@@ -177,6 +178,8 @@ func (h *Handler) ContainsInstance(
 func (h *Handler) processNewInstance(i instance, conf *external.Configuration) (err error) {
 	// todo: add instance validation here.
 	//       (attach crypto-backend, that is able to process lamport signatures)
+
+	fmt.Println("----", i.TxID().Bytes)
 
 	record, err := h.pool.Add(i)
 	if err != nil {

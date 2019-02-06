@@ -1,6 +1,7 @@
 package chain
 
 import (
+	"fmt"
 	"geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/common/types/transactions"
 	"geo-observers-blockchain/core/geo"
@@ -10,7 +11,7 @@ import (
 	"time"
 )
 
-func (p *Producer) reportGEORequestError(r *common.RequestWithResponse, err error) error {
+func (p *Producer) reportGEORequestError(r common.RequestWithResponse, err error) error {
 	select {
 	case r.ErrorsChannel() <- err:
 	default:
@@ -115,7 +116,7 @@ func (p *Producer) processGEOTxStatesRequest(req *geoRequests.TxsStates) (err er
 	response := geoResponses.NewTxStates(p.chain.Height())
 
 	appendClaimInPoolState := func(TxID *transactions.TxID) (err error) {
-		resultsChannel, errorsChannel := p.poolTSLs.ContainsInstance(TxID)
+		resultsChannel, errorsChannel := p.poolClaims.ContainsInstance(TxID)
 		select {
 		case isPresent := <-resultsChannel:
 			if isPresent {
@@ -197,6 +198,8 @@ func (p *Producer) processGEOTxStatesRequest(req *geoRequests.TxsStates) (err er
 	}
 
 	for _, TxID := range req.TxIDs.At {
+		fmt.Println("------", TxID.Bytes)
+
 		err = appendTxState(TxID)
 		if err != nil {
 			return p.reportGEORequestError(req.RequestWithResponse, err)

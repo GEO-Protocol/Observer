@@ -7,14 +7,14 @@ import (
 )
 
 type TxsStates struct {
-	*common.RequestWithResponse
+	common.RequestWithResponse
 	TxIDs *transactions.TransactionIDs
 }
 
 func NewTxStates(TxIDs []*transactions.TxID) *TxsStates {
 	return &TxsStates{
 		TxIDs:               transactions.NewTransactionIDs(TxIDs),
-		RequestWithResponse: common.NewRequestWithResponse(),
+		RequestWithResponse: *(common.NewRequestWithResponse()),
 	}
 }
 
@@ -25,7 +25,7 @@ func (request *TxsStates) MarshalBinary() (data []byte, err error) {
 }
 
 func (request *TxsStates) UnmarshalBinary(data []byte) (err error) {
-	request.RequestWithResponse = common.NewRequestWithResponse()
+	request.RequestWithResponse = *(common.NewRequestWithResponse())
 	request.TxIDs = &transactions.TransactionIDs{}
 	return request.TxIDs.UnmarshalBinary(data)
 }
