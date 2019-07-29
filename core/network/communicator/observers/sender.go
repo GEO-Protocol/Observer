@@ -5,9 +5,9 @@ import (
 	errors2 "geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/geo"
 	"geo-observers-blockchain/core/network/communicator/observers/constants"
-	"geo-observers-blockchain/core/network/communicator/observers/requests"
-	"geo-observers-blockchain/core/network/communicator/observers/responses"
 	"geo-observers-blockchain/core/network/external"
+	"geo-observers-blockchain/core/requests"
+	"geo-observers-blockchain/core/responses"
 	"geo-observers-blockchain/core/settings"
 	"geo-observers-blockchain/core/utils"
 	log "github.com/sirupsen/logrus"
@@ -48,8 +48,6 @@ func NewSender(observersConfReporter *external.Reporter) *Sender {
 }
 
 func (s *Sender) Run(host string, port uint16, errors chan<- error) {
-	// Report Ok
-	errors <- nil
 	s.log().Info("Started")
 
 	s.waitAndSendInfo(errors)
@@ -78,7 +76,13 @@ func (s *Sender) waitAndSendInfo(errors chan<- error) {
 // todo: remove global errors flow
 func (s *Sender) processRequestSending(request requests.Request, errors chan<- error) {
 
+	if settings.Conf.Debug {
+		s.log().WithFields(
+			log.Fields{"Type": reflect.TypeOf(request).String()}).Debug("Received request")
+	}
+
 	if request == nil {
+		// todo: remove this ugly errors2
 		errors <- errors2.NilParameter
 		return
 	}
@@ -89,7 +93,10 @@ func (s *Sender) processRequestSending(request requests.Request, errors chan<- e
 	if err != nil {
 		return
 	}
+
+	// todo: one of this 2 is not needed
 	request.SetObserverIndex(currentObserverIndex)
+	request.SetSenderIndex(currentObserverIndex)
 
 	data, err := request.MarshalBinary()
 	if err != nil {
@@ -134,17 +141,13 @@ func (s *Sender) processRequestSending(request requests.Request, errors chan<- e
 		send(constants.StreamTypeRequestDigestBroadcast, allObservers())
 
 	case *requests.BlockSignaturesBroadcast:
-		send(constants.StreamTypeRequestBlockSignaturesBroadcast, allObservers())
+		send(constants.StreamTypeRequestBlockSigsBroadcast, allObservers())
 
 	case *requests.SynchronisationTimeFrames:
 		send(constants.StreamTypeRequestTimeFrames, allObservers())
 
-	case *requests.ChainTop:
+	case *requests.ChainInfo:
 		send(constants.StreamTypeRequestChainTop, allObservers())
-
-	case *requests.TimeFrameCollision:
-		send(constants.StreamTypeRequestTimeFrameCollision,
-			request.(*requests.TimeFrameCollision).DestinationObservers())
 
 	case *requests.BlockHashBroadcast:
 		send(constants.StreamTypeRequestBlockHashBroadcast, allObservers())
@@ -167,6 +170,12 @@ func (s *Sender) processResponseSending(response responses.Response, errors chan
 		errors <- errors2.NilParameter
 		return
 	}
+
+	currentObserverIndex, err := s.reporter.GetCurrentObserverIndex()
+	if err != nil {
+		return
+	}
+	response.SetSenderIndex(currentObserverIndex)
 
 	data, err := response.MarshalBinary()
 	if err != nil {
@@ -206,7 +215,12 @@ func (s *Sender) processResponseSending(response responses.Response, errors chan
 			constants.StreamTypeResponseDigestApprove,
 			[]uint16{response.Request().ObserverIndex()})
 
-	case *responses.ChainTop:
+	case *responses.CandidateDigestReject:
+		send(
+			constants.StreamTypeResponseDigestReject,
+			[]uint16{response.Request().ObserverIndex()})
+
+	case *responses.ChainInfo:
 		send(
 			constants.StreamTypeResponseChainTop,
 			[]uint16{response.Request().ObserverIndex()})
@@ -327,7 +341,7 @@ func (s *Sender) sendDataToObserver(observer *external.Observer, data []byte) (e
 		return ErrEmptyData
 	}
 
-	//if !settings.Conf.Debug {
+	//if !settings.ObserversConfiguration.Debug {
 	// If not debug - prevent sending the data to itself.
 	// In debug mode it might be useful to send blocks to itself,
 	// to test whole network cycle in one executable process.

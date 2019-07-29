@@ -9,6 +9,7 @@ import (
 	"geo-observers-blockchain/core/settings"
 	"geo-observers-blockchain/core/storage"
 	"geo-observers-blockchain/core/utils"
+	"math"
 )
 
 const (
@@ -172,7 +173,7 @@ func (chain *Chain) BlockAt(index uint64) (b *block.Signed, err error) {
 // todo: tests needed.
 func (chain *Chain) LastBlock() (b *block.Signed, e errors.E) {
 	topIndex := chain.Height() - 1
-	if topIndex < 0 {
+	if topIndex == math.MaxUint64 { // overflow is possible after minus operation.
 		e = errors.AppendStackTrace(errors.InvalidChainHeight)
 		return
 	}

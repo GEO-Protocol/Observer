@@ -10,8 +10,8 @@ import (
 	"geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/geo"
 	"geo-observers-blockchain/core/network/communicator/observers/constants"
-	"geo-observers-blockchain/core/network/communicator/observers/requests"
-	"geo-observers-blockchain/core/network/communicator/observers/responses"
+	"geo-observers-blockchain/core/requests"
+	"geo-observers-blockchain/core/responses"
 	"geo-observers-blockchain/core/utils"
 	log "github.com/sirupsen/logrus"
 	"io"
@@ -32,6 +32,8 @@ type Receiver struct {
 	//BlockCandidates chan *chain.BlockSigned
 	Requests  chan requests.Request
 	Responses chan responses.Response
+
+	roundRelatedTrafficIgnored bool
 }
 
 func NewReceiver() *Receiver {
@@ -61,10 +63,6 @@ func (r *Receiver) Run(host string, port uint16, errors chan<- error) {
 	//noinspection GoUnhandledErrorResult
 	defer listener.Close()
 
-	// Inform outer scope that initialisation was performed well
-	// and no errors has been occurred.
-	errors <- nil
-
 	r.log().WithFields(log.Fields{
 		"Host": host,
 		"Port": port,
@@ -79,6 +77,14 @@ func (r *Receiver) Run(host string, port uint16, errors chan<- error) {
 
 		go r.handleConnection(conn, errors)
 	}
+}
+
+func (r *Receiver) IgnoreRoundRelatedTraffic() {
+	r.roundRelatedTrafficIgnored = true
+}
+
+func (r *Receiver) AcceptAllTraffic() {
+	r.roundRelatedTrafficIgnored = false
 }
 
 func (r *Receiver) handleConnection(conn net.Conn, errors chan<- error) {
@@ -154,6 +160,12 @@ func (r *Receiver) receiveDataPackage(reader *bufio.Reader) (data []byte, err er
 func (r *Receiver) parseAndRouteData(data []byte) (err error) {
 
 	processRequest := func(request requests.Request) (err error) {
+		if r.roundRelatedTrafficIgnored {
+			// todo: comment needed
+			r.log().Warn(reflect.TypeOf(request).String(), " ignored due to corresponding rule set.")
+			return
+		}
+
 		if settings.OutputNetworkObserversReceiverDebug {
 			r.log().WithFields(log.Fields{
 				"Type": reflect.TypeOf(request).String(),
@@ -181,6 +193,16 @@ func (r *Receiver) parseAndRouteData(data []byte) (err error) {
 	}
 
 	processResponse := func(response responses.Response, customHandler func(responses.Response)) (err error) {
+		if r.roundRelatedTrafficIgnored {
+			// todo: comment needed
+			if reflect.TypeOf(response) != reflect.TypeOf(&responses.TimeFrame{}) &&
+				reflect.TypeOf(response) != reflect.TypeOf(&responses.ChainInfo{}) {
+
+				r.log().Warn(reflect.TypeOf(response).String(), " ignored due to corresponding rule set.")
+				return
+			}
+		}
+
 		if settings.OutputNetworkObserversReceiverDebug {
 			r.log().WithFields(log.Fields{
 				"Type": reflect.TypeOf(response).String(),
@@ -244,17 +266,17 @@ func (r *Receiver) parseAndRouteData(data []byte) (err error) {
 	case constants.DataTypeResponseDigestApprove:
 		return processResponse(&responses.CandidateDigestApprove{}, nil)
 
-	case constants.DataTypeRequestBlockSignaturesBroadcast:
+	case constants.DataTypeResponseDigestReject:
+		return processResponse(&responses.CandidateDigestReject{}, nil)
+
+	case constants.DataTypeRequestBlockSigsBroadcast:
 		return processRequest(&requests.BlockSignaturesBroadcast{})
 
 	case constants.DataTypeRequestChainTop:
-		return processRequest(&requests.ChainTop{})
+		return processRequest(&requests.ChainInfo{})
 
 	case constants.DataTypeResponseChainTop:
-		return processResponse(&responses.ChainTop{}, nil)
-
-	case constants.DataTypeRequestTimeFrameCollision:
-		return processRequest(&requests.TimeFrameCollision{})
+		return processResponse(&responses.ChainInfo{}, nil)
 
 	case constants.DataTypeRequestBlockHashBroadcast:
 		return processRequest(&requests.BlockHashBroadcast{})

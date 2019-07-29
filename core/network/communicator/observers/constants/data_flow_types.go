@@ -5,26 +5,19 @@ var (
 	DataTypeRequestAccepted = 1
 
 	// Requests and responses
-	DataTypeRequestTimeFrames uint8 = 128
-	DataTypeResponseTimeFrame uint8 = 129
-
-	DataTypeRequestTSLBroadcast uint8 = 130
-	DataTypeResponseTSLApprove  uint8 = 131
-
-	DataTypeRequestClaimBroadcast uint8 = 132
-	DataTypeResponseClaimApprove  uint8 = 133
-
-	DataTypeRequestDigestBroadcast uint8 = 134
-	DataTypeResponseDigestApprove  uint8 = 135
-
-	DataTypeRequestBlockSignaturesBroadcast uint8 = 136
-
-	DataTypeRequestChainTop  uint8 = 137
-	DataTypeResponseChainTop uint8 = 138
-
-	DataTypeRequestBlockHashBroadcast uint8 = 139
-
-	DataTypeRequestTimeFrameCollision uint8 = 140
+	DataTypeRequestTimeFrames         uint8 = 70
+	DataTypeResponseTimeFrame         uint8 = 71
+	DataTypeRequestTSLBroadcast       uint8 = 75
+	DataTypeResponseTSLApprove        uint8 = 76
+	DataTypeRequestClaimBroadcast     uint8 = 80
+	DataTypeResponseClaimApprove      uint8 = 81
+	DataTypeRequestDigestBroadcast    uint8 = 85
+	DataTypeResponseDigestApprove     uint8 = 86
+	DataTypeResponseDigestReject      uint8 = 87
+	DataTypeRequestBlockSigsBroadcast uint8 = 90
+	DataTypeRequestChainTop           uint8 = 91
+	DataTypeResponseChainTop          uint8 = 95
+	DataTypeRequestBlockHashBroadcast uint8 = 96
 
 	// Errors
 	DataTypeInternalError   = 253
@@ -33,25 +26,17 @@ var (
 )
 
 var (
-	// Requests and responses
-	StreamTypeRequestTimeFrames = []byte{DataTypeRequestTimeFrames}
-	StreamTypeResponseTimeFrame = []byte{DataTypeResponseTimeFrame}
-
-	StreamTypeRequestTSLBroadcast = []byte{DataTypeRequestTSLBroadcast}
-	StreamTypeResponseTSLApprove  = []byte{DataTypeResponseTSLApprove}
-
-	StreamTypeRequestClaimBroadcast = []byte{DataTypeRequestClaimBroadcast}
-	StreamTypeResponseClaimApprove  = []byte{DataTypeResponseClaimApprove}
-
-	StreamTypeRequestDigestBroadcast = []byte{DataTypeRequestDigestBroadcast}
-	StreamTypeResponseDigestApprove  = []byte{DataTypeResponseDigestApprove}
-
-	StreamTypeRequestBlockSignaturesBroadcast = []byte{DataTypeRequestBlockSignaturesBroadcast}
-
-	StreamTypeRequestChainTop  = []byte{DataTypeRequestChainTop}
-	StreamTypeResponseChainTop = []byte{DataTypeResponseChainTop}
-
+	StreamTypeRequestTimeFrames         = []byte{DataTypeRequestTimeFrames}
+	StreamTypeResponseTimeFrame         = []byte{DataTypeResponseTimeFrame}
+	StreamTypeRequestTSLBroadcast       = []byte{DataTypeRequestTSLBroadcast}
+	StreamTypeResponseTSLApprove        = []byte{DataTypeResponseTSLApprove}
+	StreamTypeRequestClaimBroadcast     = []byte{DataTypeRequestClaimBroadcast}
+	StreamTypeResponseClaimApprove      = []byte{DataTypeResponseClaimApprove}
+	StreamTypeRequestDigestBroadcast    = []byte{DataTypeRequestDigestBroadcast}
+	StreamTypeResponseDigestApprove     = []byte{DataTypeResponseDigestApprove}
+	StreamTypeResponseDigestReject      = []byte{DataTypeResponseDigestReject}
+	StreamTypeRequestBlockSigsBroadcast = []byte{DataTypeRequestBlockSigsBroadcast}
+	StreamTypeRequestChainTop           = []byte{DataTypeRequestChainTop}
+	StreamTypeResponseChainTop          = []byte{DataTypeResponseChainTop}
 	StreamTypeRequestBlockHashBroadcast = []byte{DataTypeRequestBlockHashBroadcast}
-
-	StreamTypeRequestTimeFrameCollision = []byte{DataTypeRequestTimeFrameCollision}
 )

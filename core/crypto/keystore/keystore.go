@@ -1,10 +1,11 @@
 package keystore
 
 import (
-	e "crypto/ecdsa"
+	crypto_ecdsa "crypto/ecdsa"
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
+	"geo-observers-blockchain/core/common/errors"
 	"geo-observers-blockchain/core/common/types/hash"
 	"geo-observers-blockchain/core/crypto/ecdsa"
 	log "github.com/sirupsen/logrus"
@@ -13,7 +14,7 @@ import (
 )
 
 type KeyStore struct {
-	pkey *e.PrivateKey
+	pkey *crypto_ecdsa.PrivateKey
 }
 
 func New() (keystore *KeyStore, err error) {
@@ -36,23 +37,29 @@ func New() (keystore *KeyStore, err error) {
 	return
 }
 
-func (k *KeyStore) IsEqualPubKey(key *e.PublicKey) bool {
-	return k.pkey.PublicKey.X.Cmp(key.X) == 0 &&
-		k.pkey.PublicKey.Y.Cmp(key.Y) == 0
+func (k *KeyStore) IsEqualPubKey(key *crypto_ecdsa.PublicKey) bool {
+	return k.pkey.PublicKey.X.Cmp(key.X) == 0 && k.pkey.PublicKey.Y.Cmp(key.Y) == 0
 }
 
-func (k *KeyStore) SignHash(h hash.SHA256Container) (signature *ecdsa.Signature, err error) {
+func (k *KeyStore) SignHash(h hash.SHA256Container) (signature *ecdsa.Signature, e errors.E) {
+	var err error
 	signature = &ecdsa.Signature{}
-	signature.R, signature.S, err = e.Sign(rand.Reader, k.pkey, h.Bytes[:])
+
+	signature.R, signature.S, err = crypto_ecdsa.Sign(rand.Reader, k.pkey, h.Bytes[:])
+	if err != nil {
+		e = errors.AppendStackTrace(err)
+		return
+	}
+
 	return
 }
 
 func (k *KeyStore) CheckOwnSignature(h hash.SHA256Container, sig ecdsa.Signature) bool {
-	return e.Verify(&k.pkey.PublicKey, h.Bytes[:], sig.R, sig.S)
+	return crypto_ecdsa.Verify(&k.pkey.PublicKey, h.Bytes[:], sig.R, sig.S)
 }
 
-func (k *KeyStore) CheckExternalSignature(h hash.SHA256Container, sig ecdsa.Signature, pubKey *e.PublicKey) bool {
-	return e.Verify(pubKey, h.Bytes[:], sig.R, sig.S)
+func (k *KeyStore) CheckExternalSignature(h hash.SHA256Container, sig ecdsa.Signature, pubKey *crypto_ecdsa.PublicKey) bool {
+	return crypto_ecdsa.Verify(pubKey, h.Bytes[:], sig.R, sig.S)
 }
 
 func (k *KeyStore) encodePKeyToPem() (pemEncoded string, err error) {

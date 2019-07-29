@@ -37,14 +37,17 @@ var (
 	// todo: ensure check of this constraint on ticker starting.
 	ComposerSynchronisationTimeRange = time.Second * 20
 
-	// This period of time is used as a buffer time window:
-	// during this time window observer does not accepts any external events or messages,
-	// and prepares to process next ticker tick.
-	//
-	// This time window MUST be shorter than block generation time range,
-	// because it would be subtracted from the AverageBlockGenerationTimeRange.
-	// todo: drop this parameter at all.
-	BlockGenerationSilencePeriod = time.Second * 10
+	//// This period of time is used as a buffer time window:
+	//// during this time window observer does not accepts any external events or messages,
+	//// and prepares to process next ticker tick.
+	////
+	//// This time window MUST be shorter than block generation time range,
+	//// because it would be subtracted from the AverageBlockGenerationTimeRange.
+	//// todo: drop this parameter at all.
+	//BlockGenerationSilencePeriod = time.Second * 10
+
+	BlockValidationStageFinalizingTimeRange = time.Second * 3
+	BlockGenerationStageFinalizingTimeRange = time.Second * 20
 
 	// todo: sync with the GEO engine
 	GEOTransactionMaxParticipantsCount = 700
@@ -57,6 +60,7 @@ var (
 	OutputNetworkGEOCommunicatorDebug      = false
 	OutputNetworkObserversReceiverWarnings = false
 	OutputBlocksProducerDebug              = false
+	OutputCoreDispatcherDebug              = false
 )
 
 type networkInterface struct {
@@ -123,16 +127,18 @@ func parseFlags() {
 		AverageBlockGenerationTimeRange = time.Second * 10
 		TickerSynchronisationTimeRange = time.Second * 2
 		ComposerSynchronisationTimeRange = time.Second * 2
-		BlockGenerationSilencePeriod = time.Second * 2
 
-		OutputNetworkObserversSenderDebug = false
-		OutputNetworkObserversSenderWarnings = false
-		OutputNetworkObserversReceiverDebug = false
-		OutputNetworkObserversReceiverWarnings = false
+		BlockValidationStageFinalizingTimeRange = time.Second * 1
+		BlockGenerationStageFinalizingTimeRange = time.Second * 4
+
+		OutputNetworkObserversSenderDebug = true
+		OutputNetworkObserversSenderWarnings = true
+		OutputNetworkObserversReceiverDebug = true
+		OutputNetworkObserversReceiverWarnings = true
 		OutputBlocksProducerDebug = true
 	}
 }
 
 func log() *l.Entry {
-	return l.WithFields(l.Fields{"prefix": "Conf"})
+	return l.WithFields(l.Fields{"prefix": "ObserversConfiguration"})
 }

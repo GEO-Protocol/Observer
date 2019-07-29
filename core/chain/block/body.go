@@ -19,21 +19,23 @@ type Body struct {
 	TSLs                *geo.TSLs
 }
 
-func (body *Body) SortInternalSequences() (err error) {
-	err = body.Claims.Sort()
+func (body *Body) SortInternalSequences() (e errors.E) {
+	err := body.Claims.Sort()
 	if err != nil {
-		return
+		// todo: convert to new format
+		return errors.AppendStackTrace(err)
 	}
 
 	err = body.TSLs.Sort()
 	if err != nil {
-		return
+		// todo: convert to new format
+		return errors.AppendStackTrace(err)
 	}
 
 	return
 }
 
-func (body *Body) UpdateHash(previousBlockHash hash.SHA256Container) (err error) {
+func (body *Body) UpdateHash(previousBlockHash hash.SHA256Container) (e errors.E) {
 	binaryHeight := utils.MarshalUint64(body.Index)
 	generatedHash := hash.NewSHA256Container(binaryHeight)
 
@@ -54,7 +56,7 @@ func (body *Body) UpdateHash(previousBlockHash hash.SHA256Container) (err error)
 	for _, claim := range body.Claims.At {
 		data, err := claim.MarshalBinary()
 		if err != nil {
-			return err
+			return errors.AppendStackTrace(err)
 		}
 
 		generatedHash = hash.NewSHA256Container(
@@ -64,7 +66,7 @@ func (body *Body) UpdateHash(previousBlockHash hash.SHA256Container) (err error)
 	for _, tsl := range body.TSLs.At {
 		data, err := tsl.MarshalBinary()
 		if err != nil {
-			return err
+			return errors.AppendStackTrace(err)
 		}
 
 		generatedHash = hash.NewSHA256Container(
@@ -79,9 +81,9 @@ func (body *Body) UpdateHash(previousBlockHash hash.SHA256Container) (err error)
 // GenerateDigest does not call SortInternalSequences() and UpdateHash()
 // and doest not check if them was called in the past.
 // This methods MUST be called before calling GenerateDigest.
-func (body *Body) GenerateDigest() (digest *Digest, err error) {
+func (body *Body) GenerateDigest() (digest *Digest, e errors.E) {
 	if body.AuthorObserverIndex >= uint16(settings.ObserversMaxCount) {
-		err = errors.ExpectationFailed
+		e = errors.AppendStackTrace(errors.ExpectationFailed)
 		return
 	}
 
@@ -95,7 +97,7 @@ func (body *Body) GenerateDigest() (digest *Digest, err error) {
 	for _, claim := range body.Claims.At {
 		data, err := claim.MarshalBinary()
 		if err != nil {
-			return nil, err
+			return nil, errors.AppendStackTrace(err)
 		}
 
 		digest.ClaimsHashes.At = append(
@@ -105,7 +107,7 @@ func (body *Body) GenerateDigest() (digest *Digest, err error) {
 	for _, tsl := range body.TSLs.At {
 		data, err := tsl.MarshalBinary()
 		if err != nil {
-			return nil, err
+			return nil, errors.AppendStackTrace(err)
 		}
 
 		digest.TSLsHashes.At = append(

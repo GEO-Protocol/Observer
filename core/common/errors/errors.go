@@ -9,6 +9,7 @@ type E interface {
 	Error() error
 	StackTrace() string
 	IsFatal() bool
+	SetFatal()
 }
 
 type StackTrace struct {
@@ -46,6 +47,10 @@ func (e *StackTrace) IsFatal() bool {
 	return e.fatal
 }
 
+func (e *StackTrace) SetFatal() {
+	e.fatal = true
+}
+
 func (e *StackTrace) Error() error {
 	return e.err
 }
@@ -57,6 +62,10 @@ func (e *StackTrace) StackTrace() string {
 // --------------------------------------------------------------------------------------------------------------------
 
 func SendErrorIfAny(err error, errors chan error) {
+	if err == nil {
+		return
+	}
+
 	select {
 	case errors <- err:
 		return
@@ -88,7 +97,7 @@ var (
 	// Channels
 	ChannelTransferringFailed = errors.New("attempt to send info to the channel failed")
 
-	// Events
+	// outgoingEvents
 	UnexpectedEvent = errors.New("unexpected event occurred")
 
 	// Sequences
@@ -115,7 +124,11 @@ var (
 	InvalidBlockCandidateDigest        = errors.New("invalid block candidate digest")
 	InvalidTimeFrame                   = errors.New("invalid time frame")
 	InvalidBlockCandidateDigestApprove = errors.New("invalid block candidate digest approve")
+	InvalidBlockCandidateDigestReject  = errors.New("invalid block candidate digest reject")
 	InvalidBlockSignatures             = errors.New("invalid block signatures")
+	BlockValidationStageFailed         = errors.New("block validation stage failed")
+	BlockGenerationStageFailed         = errors.New("block generation stage failed")
+	SyncNeeded                         = errors.New("sync needed")
 
 	// GEO Nodes receiver
 	HashIntegrityCheckFailed = errors.New("hash integrity check failed")

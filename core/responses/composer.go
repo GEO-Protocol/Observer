@@ -2,33 +2,33 @@ package responses
 
 import (
 	"geo-observers-blockchain/core/common/types/hash"
-	"geo-observers-blockchain/core/network/communicator/observers/requests"
+	"geo-observers-blockchain/core/requests"
 	"geo-observers-blockchain/core/utils"
 )
 
-type ChainTop struct {
+type ChainInfo struct {
 	*response
 
-	TopBlockHash       *hash.SHA256Container
+	LastBlockHash      *hash.SHA256Container
 	RequestedBlockHash *hash.SHA256Container
 }
 
 func NewChainTop(r requests.Request, observerNumber uint16,
-	topBlockHash, requestedBlockHash *hash.SHA256Container) *ChainTop {
-	return &ChainTop{
+	topBlockHash, requestedBlockHash *hash.SHA256Container) *ChainInfo {
+	return &ChainInfo{
 		response:           newResponse(r, observerNumber),
-		TopBlockHash:       topBlockHash,
+		LastBlockHash:      topBlockHash,
 		RequestedBlockHash: requestedBlockHash,
 	}
 }
 
-func (r *ChainTop) MarshalBinary() (data []byte, err error) {
+func (r *ChainInfo) MarshalBinary() (data []byte, err error) {
 	responseData, err := r.response.MarshalBinary()
 	if err != nil {
 		return
 	}
 
-	topBlockHashData, err := r.TopBlockHash.MarshalBinary()
+	topBlockHashData, err := r.LastBlockHash.MarshalBinary()
 	if err != nil {
 		return
 	}
@@ -41,19 +41,19 @@ func (r *ChainTop) MarshalBinary() (data []byte, err error) {
 	return utils.ChainByteSlices(responseData, topBlockHashData, requestedBlockHashData), nil
 }
 
-func (r *ChainTop) UnmarshalBinary(data []byte) (err error) {
+func (r *ChainInfo) UnmarshalBinary(data []byte) (err error) {
 	r.response = &response{}
-	err = r.response.UnmarshalBinary(data[:2])
+	err = r.response.UnmarshalBinary(data[:ResponseDefaultBytesLength])
 	if err != nil {
 		return
 	}
 
-	r.TopBlockHash = &hash.SHA256Container{}
-	err = r.TopBlockHash.UnmarshalBinary(data[2:])
+	r.LastBlockHash = &hash.SHA256Container{}
+	err = r.LastBlockHash.UnmarshalBinary(data[ResponseDefaultBytesLength:])
 	if err != nil {
 		return
 	}
 
 	r.RequestedBlockHash = &hash.SHA256Container{}
-	return r.RequestedBlockHash.UnmarshalBinary(data[2+hash.BytesSize:])
+	return r.RequestedBlockHash.UnmarshalBinary(data[ResponseDefaultBytesLength+hash.BytesSize:])
 }

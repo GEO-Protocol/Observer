@@ -2,9 +2,9 @@ package ticker
 
 import (
 	errors2 "geo-observers-blockchain/core/common/errors"
-	"geo-observers-blockchain/core/network/communicator/observers/requests"
-	"geo-observers-blockchain/core/network/communicator/observers/responses"
 	"geo-observers-blockchain/core/network/external"
+	"geo-observers-blockchain/core/requests"
+	"geo-observers-blockchain/core/responses"
 	"geo-observers-blockchain/core/settings"
 	log "github.com/sirupsen/logrus"
 	"math"
@@ -29,7 +29,7 @@ const (
 //       but IT IS NOT READY for the production usage.
 
 type Ticker struct {
-	OutgoingEventsTimeFrameEnd         chan *EventTimeFrameEnd
+	OutgoingEventsTimeFrameEnd         chan *EventTimeFrameStarted
 	OutgoingRequestsTimeFrames         chan *requests.SynchronisationTimeFrames
 	IncomingRequestsTimeFrames         chan *requests.SynchronisationTimeFrames
 	OutgoingResponsesTimeFrame         chan *responses.TimeFrame
@@ -65,10 +65,10 @@ type Ticker struct {
 	// Current frame index monotonically increases over time.
 	// In case of current frame index reaches last observer -
 	// process begins from the beginning.
-	frame *EventTimeFrameEnd
-
-	// Invalid frames reports
-	ObserversReportedInvalidIndex map[uint16]bool
+	frame *EventTimeFrameStarted
+	//
+	//// Invalid frames reports
+	//ObserversReportedInvalidIndex map[uint16]bool
 }
 
 func New(reporter *external.Reporter) *Ticker {
@@ -78,7 +78,7 @@ func New(reporter *external.Reporter) *Ticker {
 		// Outgoing events channel is not buffered.
 		// It is better to lost ticker tick, than process several ticks
 		// one by one without any delay, that might be considered as, malicious behaviour.
-		OutgoingEventsTimeFrameEnd: make(chan *EventTimeFrameEnd),
+		OutgoingEventsTimeFrameEnd: make(chan *EventTimeFrameStarted),
 		OutgoingRequestsTimeFrames: make(chan *requests.SynchronisationTimeFrames, 1),
 		OutgoingResponsesTimeFrame: make(chan *responses.TimeFrame, 1),
 
@@ -93,12 +93,12 @@ func New(reporter *external.Reporter) *Ticker {
 
 		confReporter: reporter,
 
-		frame: &EventTimeFrameEnd{
-			Index: kInitialTimeFrameIndex,
-			Conf:  initialConfiguration,
+		frame: &EventTimeFrameStarted{
+			Index:                  kInitialTimeFrameIndex,
+			ObserversConfiguration: initialConfiguration,
 		},
 
-		ObserversReportedInvalidIndex: make(map[uint16]bool),
+		//ObserversReportedInvalidIndex: make(map[uint16]bool),
 	}
 }
 
@@ -124,15 +124,18 @@ func (t *Ticker) Run(errors chan error) {
 		// todo: reconfigure frames on external observers configuration change
 
 		case _ = <-time.After(t.nextFrameTimeLeft()):
-			t.processTick()
+			e := t.processTick()
+			if e != nil {
+				errors2.SendErrorIfAny(e.Error(), errors) // todo: replace by internal errors processing (errors.E)
+			}
 
 		case timeFramesRequest := <-t.IncomingRequestsTimeFrames:
 			err := t.processTimeFrameRequest(timeFramesRequest)
 			errors2.SendErrorIfAny(err, errors)
 
-		case timeFramesCollisionRequest := <-t.IncomingRequestsTimeFrameCollision:
-			errors2.SendErrorIfAny(
-				t.processTimeFrameCollisionRequest(timeFramesCollisionRequest), errors)
+		//case timeFramesCollisionRequest := <-t.IncomingRequestsTimeFrameCollision:
+		//	errors2.SendErrorIfAny(
+		//		t.processTimeFrameCollisionRequest(timeFramesCollisionRequest), errors)
 
 		case event := <-t.internalEventsBus:
 			err := t.processInternalEvent(event)
@@ -173,12 +176,20 @@ func (t *Ticker) Run(errors chan error) {
 	}
 }
 
+func (t *Ticker) Restart() {
+	t.internalEventsBus <- &eventSyncRequested{}
+}
+
+func (t *Ticker) InitialTimeFrame() (frame *EventTimeFrameStarted, e errors2.E) {
+	return t.generateFrame(0)
+}
+
 func (t *Ticker) syncWithOtherObservers() {
 	setNextTick := func(offset time.Duration) {
 		t.nextFrameTimestamp = time.Now().Add(offset)
 
 		// Interrupt internal loop, so this change would be processed.
-		t.internalEventsBus <- &EventTickerStarted{}
+		t.internalEventsBus <- &eventTickerStarted{}
 	}
 
 	t.log().Info("Synchronization started")
@@ -190,14 +201,14 @@ func (t *Ticker) syncWithOtherObservers() {
 		t.log().Warn("Independent time frames flow started")
 
 		// Use default block generation time range.
-		t.frame = &EventTimeFrameEnd{Index: nextFrameIndex}
+		t.frame = &EventTimeFrameStarted{Index: nextFrameIndex}
 		setNextTick(settings.AverageBlockGenerationTimeRange)
 
 	} else {
 		t.log().WithFields(
 			log.Fields{"ResponsesCount": responsesCollected}).Info("Synchronisation is done")
 
-		t.frame = &EventTimeFrameEnd{Index: nextFrameIndex}
+		t.frame = &EventTimeFrameStarted{Index: nextFrameIndex}
 		setNextTick(time.Nanosecond * time.Duration(nextFrameOffset))
 	}
 }
@@ -235,11 +246,14 @@ func (t *Ticker) processSync() (
 
 func (t *Ticker) processInternalEvent(event interface{}) error {
 	switch event.(type) {
-	case *EventTickerStarted:
-		{
-			t.isTickerRunning = true
-			return nil
-		}
+	case *eventTickerStarted:
+		t.isTickerRunning = true
+		return nil
+
+	case *eventSyncRequested:
+		t.isTickerRunning = false
+		t.syncWithOtherObservers()
+		return nil
 
 	default:
 		return errors2.NilParameter
@@ -296,36 +310,35 @@ func (t *Ticker) processTimeFrameRequest(request *requests.SynchronisationTimeFr
 	}
 }
 
-func (t *Ticker) processTimeFrameCollisionRequest(request *requests.TimeFrameCollision) (err error) {
-	if !t.isTickerRunning {
+//func (t *Ticker) processTimeFrameCollisionRequest(request *requests.TimeFrameCollision) (err error) {
+//	if !t.isTickerRunning {
+//		return
+//	}
+//
+//	// todo: collision report might be used for draining the node.
+//	//       add some filter map[observer] -> reports count per time.
+//
+//	t.ObserversReportedInvalidIndex[request.ObserverIndex()] = true
+//	if len(t.ObserversReportedInvalidIndex) > settings.ObserversConsensusCount {
+//		t.log().Debug("!!! Collision detected")
+//		t.syncWithOtherObservers()
+//	}
+//
+//	return
+//}
+
+func (t *Ticker) processTick() (e errors2.E) {
+	nextFrameIndex := t.frame.Index + 1
+	if nextFrameIndex == uint16(settings.ObserversMaxCount) {
+		nextFrameIndex = 0
+	}
+
+	// WARN!
+	// Event instance must always be replaced!
+	// Do not update event's fields directly.
+	t.frame, e = t.generateFrame(nextFrameIndex)
+	if e != nil {
 		return
-	}
-
-	// todo: collision report might be used for draining the node.
-	//       add some filter map[observer] -> reports count per time.
-
-	t.ObserversReportedInvalidIndex[request.ObserverIndex()] = true
-	if len(t.ObserversReportedInvalidIndex) > settings.ObserversConsensusCount {
-		t.log().Debug("!!! Collision detected")
-		t.syncWithOtherObservers()
-	}
-
-	return
-}
-
-func (t *Ticker) processTick() {
-	nextFrameNumber := t.frame.Index + 1
-	if nextFrameNumber == uint16(settings.ObserversMaxCount) {
-		nextFrameNumber = 0
-	}
-
-	// Warn!
-	// Fatal event always must replace previous one.
-	// Do not update event's fields directly!
-	t.frame = &EventTimeFrameEnd{
-		Index:               nextFrameNumber,
-		Conf:                t.frame.Conf,
-		FinalStageTimestamp: time.Now().Add(-settings.BlockGenerationSilencePeriod),
 	}
 
 	select {
@@ -334,8 +347,7 @@ func (t *Ticker) processTick() {
 		t.log().Error("tick transfer error")
 	}
 
-	// Drop all index claims, collected during previous round.
-	t.ObserversReportedInvalidIndex = make(map[uint16]bool)
+	return
 }
 
 // nextFrameTimeLeft returns time duration to the next time frame.
@@ -360,7 +372,7 @@ func (t *Ticker) reconfigureFrames(e *external.EventConfigurationChanged) {
 }
 
 // processMajorityAndCalculateAverageNextFrameTTL returns average time offset.
-// Returns 0 in case if no offset is present if offsets.
+// Returns 0 in case if no offset is present in majorityOfTimeOffsets.
 func (t *Ticker) processMajorityAndCalculateAverageNextFrameTTL(majorityOfTimeOffsets []uint64) uint64 {
 	if len(majorityOfTimeOffsets) == 0 {
 		return 0
@@ -443,6 +455,28 @@ func (t *Ticker) processMajorityOfFrameResponses() (
 	return
 }
 
+func (t *Ticker) generateFrame(index uint16) (frame *EventTimeFrameStarted, e errors2.E) {
+	observersConfiguration, err := t.confReporter.GetCurrentConfiguration()
+	if err != nil {
+		e = errors2.New(err.Error())
+		return
+	}
+
+	validationStageEndTimestamp :=
+		time.Now().Add(settings.AverageBlockGenerationTimeRange).Add(
+			-settings.BlockValidationStageFinalizingTimeRange)
+
+	blockGenerationStageEndTimestamp :=
+		validationStageEndTimestamp.Add(-(settings.BlockGenerationStageFinalizingTimeRange))
+
+	frame = &EventTimeFrameStarted{
+		Index:                            index,
+		ObserversConfiguration:           observersConfiguration,
+		ValidationStageEndTimestamp:      validationStageEndTimestamp,
+		BlockGenerationStageEndTimestamp: blockGenerationStageEndTimestamp,
+	}
+	return
+}
 func (t *Ticker) log() *log.Entry {
 	return log.WithFields(log.Fields{"prefix": "Ticker"})
 }

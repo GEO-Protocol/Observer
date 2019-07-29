@@ -2,7 +2,7 @@ package responses
 
 import (
 	"geo-observers-blockchain/core/common/types/hash"
-	"geo-observers-blockchain/core/network/communicator/observers/requests"
+	"geo-observers-blockchain/core/requests"
 	"geo-observers-blockchain/core/utils"
 )
 
@@ -36,13 +36,13 @@ func (r *PoolInstanceBroadcastApprove) MarshalBinary() (data []byte, err error) 
 
 func (r *PoolInstanceBroadcastApprove) UnmarshalBinary(data []byte) (err error) {
 	r.response = &response{}
-	err = r.response.UnmarshalBinary(data[:2])
+	err = r.response.UnmarshalBinary(data[:ResponseDefaultBytesLength])
 	if err != nil {
 		return
 	}
 
 	r.Hash = &hash.SHA256Container{}
-	return r.Hash.UnmarshalBinary(data[2:])
+	return r.Hash.UnmarshalBinary(data[ResponseDefaultBytesLength:])
 }
 
 // --------------------------------------------------------------------------------------------------------------------

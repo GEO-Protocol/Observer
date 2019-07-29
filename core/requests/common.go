@@ -5,8 +5,11 @@ import (
 	"geo-observers-blockchain/core/utils"
 )
 
+const RequestDefaultBytesLength = 4
+
 type request struct {
-	observerNumber uint16
+	senderIndex   uint16
+	receiverIndex uint16
 
 	// If nil - request must be sent to all observers.
 	// Otherwise - contains positional number ob observers,
@@ -24,24 +27,43 @@ func newRequest(destinationObservers []uint16) request {
 	}
 }
 
+func newRequestForAllObservers() request {
+	return request{}
+}
+
 func (r *request) ObserverIndex() uint16 {
-	return r.observerNumber
+	return r.receiverIndex
+}
+
+func (r *request) SetObserverIndex(index uint16) {
+	r.receiverIndex = index
+}
+
+func (r *request) SenderIndex() uint16 {
+	return r.senderIndex
+}
+
+func (r *request) SetSenderIndex(index uint16) {
+	r.senderIndex = index
 }
 
 func (r *request) DestinationObservers() []uint16 {
 	return r.destinationObservers
 }
 
-func (r *request) SetObserverIndex(number uint16) {
-	r.observerNumber = number
-}
-
 func (r *request) MarshalBinary() ([]byte, error) {
-	return utils.MarshalUint16(r.observerNumber), nil
+	return utils.ChainByteSlices(
+		utils.MarshalUint16(r.senderIndex),
+		utils.MarshalUint16(r.receiverIndex)), nil
 }
 
 func (r *request) UnmarshalBinary(data []byte) (err error) {
-	r.observerNumber, err = utils.UnmarshalUint16(data[0:2])
+	r.senderIndex, err = utils.UnmarshalUint16(data[:2])
+	if err != nil {
+		return
+	}
+
+	r.receiverIndex, err = utils.UnmarshalUint16(data[2:4])
 	return
 }
 
@@ -50,6 +72,8 @@ func (r *request) UnmarshalBinary(data []byte) (err error) {
 type Request interface {
 	SetObserverIndex(number uint16)
 	ObserverIndex() uint16
+	SenderIndex() uint16
+	SetSenderIndex(index uint16)
 	MarshalBinary() ([]byte, error)
 	UnmarshalBinary([]byte) error
 }

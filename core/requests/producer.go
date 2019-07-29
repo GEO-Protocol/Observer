@@ -3,7 +3,6 @@ package requests
 import (
 	"geo-observers-blockchain/core/chain/block"
 	"geo-observers-blockchain/core/chain/signatures"
-	"geo-observers-blockchain/core/common"
 	"geo-observers-blockchain/core/common/types/hash"
 	"geo-observers-blockchain/core/settings"
 	"geo-observers-blockchain/core/utils"
@@ -39,13 +38,13 @@ func (r *CandidateDigestBroadcast) MarshalBinary() (data []byte, err error) {
 }
 
 func (r *CandidateDigestBroadcast) UnmarshalBinary(data []byte) (err error) {
-	err = r.request.UnmarshalBinary(data[0:common.Uint16ByteSize])
+	err = r.request.UnmarshalBinary(data[0:RequestDefaultBytesLength])
 	if err != nil {
 		return
 	}
 
 	r.Digest = &block.Digest{}
-	return r.Digest.UnmarshalBinary(data[common.Uint16ByteSize:])
+	return r.Digest.UnmarshalBinary(data[RequestDefaultBytesLength:])
 }
 
 // --------------------------------------------------------------------------------------------------------------------
@@ -78,13 +77,13 @@ func (r *BlockSignaturesBroadcast) MarshalBinary() (data []byte, err error) {
 }
 
 func (r *BlockSignaturesBroadcast) UnmarshalBinary(data []byte) (err error) {
-	err = r.request.UnmarshalBinary(data[0:common.Uint16ByteSize])
+	err = r.request.UnmarshalBinary(data[0:RequestDefaultBytesLength])
 	if err != nil {
 		return
 	}
 
 	r.Signatures = signatures.NewIndexedObserversSignatures(settings.ObserversMaxCount)
-	return r.Signatures.UnmarshalBinary(data[common.Uint16ByteSize:])
+	return r.Signatures.UnmarshalBinary(data[RequestDefaultBytesLength:])
 }
 
 // --------------------------------------------------------------------------------------------------------------------
@@ -117,11 +116,31 @@ func (r *BlockHashBroadcast) MarshalBinary() (data []byte, err error) {
 }
 
 func (r *BlockHashBroadcast) UnmarshalBinary(data []byte) (err error) {
-	err = r.request.UnmarshalBinary(data[0:common.Uint16ByteSize])
+	err = r.request.UnmarshalBinary(data[0:RequestDefaultBytesLength])
 	if err != nil {
 		return
 	}
 
 	r.Hash = &hash.SHA256Container{}
-	return r.Hash.UnmarshalBinary(data[common.Uint16ByteSize:])
+	return r.Hash.UnmarshalBinary(data[RequestDefaultBytesLength:])
+}
+
+// --------------------------------------------------------------------------------------------------------------------
+
+type CollisionNotification struct {
+	request
+}
+
+func NewCollisionNotification(destinationObserver uint16) *CollisionNotification {
+	return &CollisionNotification{
+		request: newRequest([]uint16{destinationObserver}),
+	}
+}
+
+func (r *CollisionNotification) MarshalBinary() ([]byte, error) {
+	return r.request.MarshalBinary()
+}
+
+func (r *CollisionNotification) UnmarshalBinary(data []byte) error {
+	return r.request.UnmarshalBinary(data)
 }

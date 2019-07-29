@@ -3,15 +3,17 @@ package core
 import (
 	"geo-observers-blockchain/core/chain/chain"
 	"geo-observers-blockchain/core/chain/pool"
+	"geo-observers-blockchain/core/common/errors"
+	"geo-observers-blockchain/core/composer"
 	"geo-observers-blockchain/core/crypto/keystore"
 	"geo-observers-blockchain/core/geo"
 	geoNet "geo-observers-blockchain/core/network/communicator/geo"
 	geoRequestsCommon "geo-observers-blockchain/core/network/communicator/geo/api/v0/common"
 	geoRequests "geo-observers-blockchain/core/network/communicator/geo/api/v0/requests"
 	observersNet "geo-observers-blockchain/core/network/communicator/observers"
-	"geo-observers-blockchain/core/network/communicator/observers/requests"
-	"geo-observers-blockchain/core/network/communicator/observers/responses"
 	"geo-observers-blockchain/core/network/external"
+	"geo-observers-blockchain/core/requests"
+	"geo-observers-blockchain/core/responses"
 	"geo-observers-blockchain/core/settings"
 	"geo-observers-blockchain/core/ticker"
 	"geo-observers-blockchain/core/utils"
@@ -29,33 +31,44 @@ type Core struct {
 	senderObservers       *observersNet.Sender
 	poolClaims            *pool.Handler
 	poolTSLs              *pool.Handler
+	blockchain            *chain.Chain
 	blocksProducer        *chain.Producer
-	composer              *chain.Composer
+	composer              *composer.Composer
 }
 
 func New() (core *Core, err error) {
-	k, err := keystore.New()
+	blockchain, err := chain.NewChain(chain.DataFilePath)
 	if err != nil {
 		return
 	}
 
-	reporter := external.NewReporter(k)
+	keys, err := keystore.New()
+	if err != nil {
+		return
+	}
+
+	reporter := external.NewReporter(keys)
 	poolTSLs := pool.NewHandler(reporter)
 	poolClaims := pool.NewHandler(reporter)
-	composer := chain.NewComposer(reporter)
-	producer, err := chain.NewProducer(reporter, k, poolTSLs, poolClaims, composer)
+
+	producer, err := chain.NewProducer(blockchain, keys, poolTSLs, poolClaims, reporter)
+	chainComposer := composer.NewComposer()
 
 	core = &Core{
-		keystore:              k,
-		ticker:                ticker.New(reporter),
-		observersConfReporter: reporter,
+		blockchain:     blockchain,
+		composer:       chainComposer,
+		blocksProducer: producer,
+		keystore:       keys,
+		ticker:         ticker.New(reporter),
+
 		senderObservers:       observersNet.NewSender(reporter),
 		receiverObservers:     observersNet.NewReceiver(),
-		communicatorGEONodes:  geoNet.New(),
-		poolClaims:            poolClaims,
-		poolTSLs:              poolTSLs,
-		blocksProducer:        producer,
-		composer:              composer,
+		observersConfReporter: reporter,
+
+		communicatorGEONodes: geoNet.New(),
+
+		poolClaims: poolClaims,
+		poolTSLs:   poolTSLs,
 	}
 
 	return
@@ -64,37 +77,40 @@ func New() (core *Core, err error) {
 func (c *Core) Run() {
 	globalErrorsFlow := make(chan error, 128)
 
-	c.initNetwork(globalErrorsFlow)
-	c.initProcessing(globalErrorsFlow)
-
-	for {
-		select {
-		case err := <-globalErrorsFlow:
-			{
-				if err != nil {
-					// todo: enhance error processing
-					//c.log().Warn(err)
+	go func() {
+		for {
+			select {
+			case err := <-globalErrorsFlow:
+				{
+					if err != nil {
+						// todo: enhance error processing
+						//c.log().Warn(err)
+					}
 				}
 			}
 		}
-	}
+	}()
+
+	c.initNetwork(globalErrorsFlow)
+	c.initSubcomponents(globalErrorsFlow)
+
+	// Blocking call.
+	c.processMainFlow(globalErrorsFlow)
 }
 
 func (c *Core) initNetwork(errors chan error) {
 	go c.communicatorGEONodes.Run(errors)
 
+	c.receiverObservers.IgnoreRoundRelatedTraffic()
 	go c.receiverObservers.Run(
 		settings.Conf.Observers.Network.Host,
 		settings.Conf.Observers.Network.Port,
 		errors)
-	c.exitIfError(errors)
 
 	go c.senderObservers.Run(
 		settings.Conf.Observers.Network.Host,
 		settings.Conf.Observers.Network.Port,
 		errors)
-
-	c.exitIfError(errors)
 
 	// ...
 	// Other initialisation goes here
@@ -104,11 +120,99 @@ func (c *Core) initNetwork(errors chan error) {
 	time.Sleep(time.Millisecond * 100)
 }
 
-func (c *Core) initProcessing(globalErrorsFlow chan error) {
+func (c *Core) initSubcomponents(globalErrorsFlow chan error) {
 	go c.ticker.Run(globalErrorsFlow)
-	go c.blocksProducer.Run(globalErrorsFlow)
-
+	go c.poolClaims.Run(globalErrorsFlow)
+	go c.poolTSLs.Run(globalErrorsFlow)
 	go c.dispatchDataFlows(globalErrorsFlow)
+	go c.composer.Run(globalErrorsFlow)
+}
+
+func (c *Core) processMainFlow(globalErrorsFlow chan error) {
+
+	currentBlock, e := c.blockchain.LastBlock()
+	if e != nil {
+		globalErrorsFlow <- e.Error()
+		return
+	}
+
+	c.log().WithFields(log.Fields{
+		"CurrentChainHeight": currentBlock.Body.Index,
+		"LastBlockHash":      currentBlock.Body.Hash.Hex(),
+	}).Info("Processing started")
+
+	// todo: consider moving this logic into separate function
+	syncChain := func(tick *ticker.EventTimeFrameStarted,
+		ticksChannel chan *ticker.EventTimeFrameStarted) (
+		lastTimeFrameEventsChan chan *ticker.EventTimeFrameStarted, err error) {
+
+		lastTimeFrameEventsChan = c.composer.SyncChain(c.blockchain, tick, ticksChannel)
+		syncResult := <-c.composer.OutgoingEvents.SyncFinished
+		if syncResult.Error != nil {
+			return
+		}
+
+		c.blockchain, err = chain.NewChain(chain.DataFilePath)
+		if err != nil {
+			return
+		}
+
+		return
+	}
+
+	initialTimeFrame, e := c.ticker.InitialTimeFrame()
+	if e != nil {
+		c.log().Error(e.StackTrace())
+		panic(e.Error())
+	}
+
+	lastTimeFrameEventsChan, err := syncChain(initialTimeFrame, c.ticker.OutgoingEventsTimeFrameEnd)
+	if err != nil {
+		globalErrorsFlow <- err // todo consolidate error
+		panic(err)              // replace with fatal error throwing.
+	}
+
+	// Begin current round right with time frame, that was used during synchronisation,
+	// to minimize probability of skipping last generated block.
+	// Transferring current event back to the ticker's channel.
+	c.ticker.OutgoingEventsTimeFrameEnd <- <-lastTimeFrameEventsChan
+
+	c.receiverObservers.AcceptAllTraffic()
+	for {
+		err := c.blocksProducer.Run(c.blockchain)
+		if err != nil {
+			if err == errors.Collision || err == errors.SyncNeeded {
+				c.log().Trace("Collision detected or sync. request occurred. " +
+					"Ticker and chain synchronisation started")
+
+				c.log().Trace("Collision detected. Chain sync started. Details: ", err.Error())
+
+				c.receiverObservers.IgnoreRoundRelatedTraffic()
+
+				// Additional ticker synchronisation might be needed.
+				c.ticker.Restart()
+
+				// Wait for ticker sync to be done.
+				timeFrameEvent := <-c.ticker.OutgoingEventsTimeFrameEnd
+
+				lastTimeFrameEventsChan, err = syncChain(timeFrameEvent, c.ticker.OutgoingEventsTimeFrameEnd)
+				if err != nil {
+					globalErrorsFlow <- err
+					panic(err) // replace with fatal error throwing.
+				}
+
+				//// Begin current round right with time frame, that was used during synchronisation,
+				//// to minimize probability of skipping last generated block.
+				//c.ticker.OutgoingEventsTimeFrameEnd <- <- lastTimeFrameEventsChan
+				c.receiverObservers.AcceptAllTraffic()
+
+				c.blocksProducer.DropEnqueuedIncomingRequestsAndResponses()
+
+			} else {
+				panic(err)
+			}
+		}
+	}
 }
 
 func (c *Core) dispatchDataFlows(globalErrorsFlow chan error) {
@@ -123,13 +227,38 @@ func (c *Core) dispatchDataFlows(globalErrorsFlow chan error) {
 		globalErrorsFlow <- err
 	}
 
+	// Prints debug trace about requests transferred for further processing.
+	printDebugOutgoingInfoStruct := func(request interface{}) {
+		if !settings.OutputCoreDispatcherDebug {
+			return
+		}
+
+		c.log().WithFields(
+			log.Fields{
+				"type":      reflect.TypeOf(request).String(),
+				"component": "core/dispatchDataFlows",
+			}).Debug("Outgoing request sent")
+	}
+
 	for {
 		select {
 
-		// Events
+		// composer
+		case outgoingRequestChainTop := <-c.composer.OutgoingRequests.ChainInfo:
+			select {
+			case c.senderObservers.OutgoingRequests <- outgoingRequestChainTop:
+				printDebugOutgoingInfoStruct(outgoingRequestChainTop)
+
+			default:
+				processTransferringFail(outgoingRequestChainTop, c.senderObservers)
+			}
+
+		// outgoingEvents
 		case eventConnectionClosed := <-c.receiverObservers.OutgoingEventsConnectionClosed:
 			select {
 			case c.senderObservers.IncomingEvents <- eventConnectionClosed:
+				printDebugOutgoingInfoStruct(eventConnectionClosed)
+
 			default:
 				processTransferringFail(eventConnectionClosed, c.senderObservers)
 			}
@@ -137,6 +266,8 @@ func (c *Core) dispatchDataFlows(globalErrorsFlow chan error) {
 		case tick := <-c.ticker.OutgoingEventsTimeFrameEnd:
 			select {
 			case c.blocksProducer.IncomingEventTimeFrameEnded <- tick:
+				printDebugOutgoingInfoStruct(tick)
+
 			default:
 				processTransferringFail(tick, c.blocksProducer)
 			}
@@ -145,6 +276,8 @@ func (c *Core) dispatchDataFlows(globalErrorsFlow chan error) {
 		case outgoingRequestCandidateDigestBroadcast := <-c.blocksProducer.OutgoingRequestsCandidateDigestBroadcast:
 			select {
 			case c.senderObservers.OutgoingRequests <- outgoingRequestCandidateDigestBroadcast:
+				printDebugOutgoingInfoStruct(outgoingRequestCandidateDigestBroadcast)
+
 			default:
 				processTransferringFail(outgoingRequestCandidateDigestBroadcast, c.senderObservers)
 			}
@@ -152,6 +285,8 @@ func (c *Core) dispatchDataFlows(globalErrorsFlow chan error) {
 		case outgoingResponseCandidateDigestApprove := <-c.blocksProducer.OutgoingResponsesCandidateDigestApprove:
 			select {
 			case c.senderObservers.OutgoingResponses <- outgoingResponseCandidateDigestApprove:
+				printDebugOutgoingInfoStruct(outgoingResponseCandidateDigestApprove)
+
 			default:
 				processTransferringFail(outgoingResponseCandidateDigestApprove, c.senderObservers)
 			}
@@ -159,20 +294,17 @@ func (c *Core) dispatchDataFlows(globalErrorsFlow chan error) {
 		case outgoingRequestBlockSignaturesBroadcast := <-c.blocksProducer.OutgoingRequestsBlockSignaturesBroadcast:
 			select {
 			case c.senderObservers.OutgoingRequests <- outgoingRequestBlockSignaturesBroadcast:
+				printDebugOutgoingInfoStruct(outgoingRequestBlockSignaturesBroadcast)
+
 			default:
 				processTransferringFail(outgoingRequestBlockSignaturesBroadcast, c.senderObservers)
-			}
-
-		case outgoingRequestChainTop := <-c.composer.OutgoingRequestsChainTop:
-			select {
-			case c.senderObservers.OutgoingRequests <- outgoingRequestChainTop:
-			default:
-				processTransferringFail(outgoingRequestChainTop, c.senderObservers)
 			}
 
 		case outgoingResponseChainTop := <-c.blocksProducer.OutgoingResponsesChainTop:
 			select {
 			case c.senderObservers.OutgoingResponses <- outgoingResponseChainTop:
+				printDebugOutgoingInfoStruct(outgoingResponseChainTop)
+
 			default:
 				processTransferringFail(outgoingResponseChainTop, c.senderObservers)
 			}
@@ -180,6 +312,8 @@ func (c *Core) dispatchDataFlows(globalErrorsFlow chan error) {
 		case outgoingRequestTimeFrameCollision := <-c.blocksProducer.OutgoingRequestsTimeFrameCollisions:
 			select {
 			case c.senderObservers.OutgoingRequests <- outgoingRequestTimeFrameCollision:
+				printDebugOutgoingInfoStruct(outgoingRequestTimeFrameCollision)
+
 			default:
 				processTransferringFail(outgoingRequestTimeFrameCollision, c.senderObservers)
 			}
@@ -187,14 +321,27 @@ func (c *Core) dispatchDataFlows(globalErrorsFlow chan error) {
 		case outgoingRequestBlockHashBroadcast := <-c.blocksProducer.OutgoingRequestsBlockHashBroadcast:
 			select {
 			case c.senderObservers.OutgoingRequests <- outgoingRequestBlockHashBroadcast:
+				printDebugOutgoingInfoStruct(outgoingRequestBlockHashBroadcast)
+
 			default:
 				processTransferringFail(outgoingRequestBlockHashBroadcast, c.senderObservers)
+			}
+
+		case outgoingResponseDigestReject := <-c.blocksProducer.OutgoingResponsesCandidateDigestReject:
+			select {
+			case c.senderObservers.OutgoingResponses <- outgoingResponseDigestReject:
+				printDebugOutgoingInfoStruct(outgoingResponseDigestReject)
+
+			default:
+				processTransferringFail(outgoingResponseDigestReject, c.senderObservers)
 			}
 
 		// Ticker
 		case outgoingRequestTimeFrames := <-c.ticker.OutgoingRequestsTimeFrames:
 			select {
 			case c.senderObservers.OutgoingRequests <- outgoingRequestTimeFrames:
+				printDebugOutgoingInfoStruct(outgoingRequestTimeFrames)
+
 			default:
 				processTransferringFail(outgoingRequestTimeFrames, c.senderObservers)
 			}
@@ -202,6 +349,8 @@ func (c *Core) dispatchDataFlows(globalErrorsFlow chan error) {
 		case outgoingResponseTimeFrame := <-c.ticker.OutgoingResponsesTimeFrame:
 			select {
 			case c.senderObservers.OutgoingResponses <- outgoingResponseTimeFrame:
+				printDebugOutgoingInfoStruct(outgoingResponseTimeFrame)
+
 			default:
 				processTransferringFail(outgoingResponseTimeFrame, c.senderObservers)
 			}
@@ -210,14 +359,19 @@ func (c *Core) dispatchDataFlows(globalErrorsFlow chan error) {
 		case outgoingRequestClaimBroadcast := <-c.poolClaims.OutgoingRequestsInstanceBroadcast:
 			select {
 			case c.senderObservers.OutgoingRequests <- outgoingRequestClaimBroadcast:
+				printDebugOutgoingInfoStruct(outgoingRequestClaimBroadcast)
+
 			default:
 				processTransferringFail(outgoingRequestClaimBroadcast, c.senderObservers)
 			}
 
 		case outgoingResponseClaimApprove := <-c.poolClaims.OutgoingResponsesInstanceBroadcast:
+			resp := responses.ClaimApprove{PoolInstanceBroadcastApprove: outgoingResponseClaimApprove}
+
 			select {
-			case c.senderObservers.OutgoingResponses <- &responses.ClaimApprove{
-				PoolInstanceBroadcastApprove: outgoingResponseClaimApprove}:
+			case c.senderObservers.OutgoingResponses <- &resp:
+				printDebugOutgoingInfoStruct(resp)
+
 			default:
 				processTransferringFail(outgoingResponseClaimApprove, c.senderObservers)
 			}
@@ -225,14 +379,19 @@ func (c *Core) dispatchDataFlows(globalErrorsFlow chan error) {
 		case outgoingRequestTSLBroadcast := <-c.poolTSLs.OutgoingRequestsInstanceBroadcast:
 			select {
 			case c.senderObservers.OutgoingRequests <- outgoingRequestTSLBroadcast:
+				printDebugOutgoingInfoStruct(outgoingRequestTSLBroadcast)
+
 			default:
 				processTransferringFail(outgoingRequestTSLBroadcast, c.senderObservers)
 			}
 
 		case outgoingResponseTSLApprove := <-c.poolTSLs.OutgoingResponsesInstanceBroadcast:
+			resp := &responses.TSLApprove{PoolInstanceBroadcastApprove: outgoingResponseTSLApprove}
+
 			select {
-			case c.senderObservers.OutgoingResponses <- &responses.TSLApprove{
-				PoolInstanceBroadcastApprove: outgoingResponseTSLApprove}:
+			case c.senderObservers.OutgoingResponses <- resp:
+				printDebugOutgoingInfoStruct(resp)
+
 			default:
 				processTransferringFail(outgoingResponseTSLApprove, c.senderObservers)
 			}
@@ -311,19 +470,19 @@ func (c *Core) processIncomingRequest(r requests.Request) (err error) {
 			processTransferringFail(r, c.blocksProducer)
 		}
 
-	case *requests.ChainTop:
+	case *requests.ChainInfo:
 		select {
-		case c.blocksProducer.IncomingRequestsChainTop <- r.(*requests.ChainTop):
+		case c.blocksProducer.IncomingRequestsChainTop <- r.(*requests.ChainInfo):
 		default:
 			processTransferringFail(r, c.blocksProducer)
 		}
 
-	case *requests.TimeFrameCollision:
-		select {
-		case c.ticker.IncomingRequestsTimeFrameCollision <- r.(*requests.TimeFrameCollision):
-		default:
-			processTransferringFail(r, c.ticker)
-		}
+	//case *requests.TimeFrameCollision:
+	//	select {
+	//	case c.ticker.IncomingRequestsTimeFrameCollision <- r.(*requests.TimeFrameCollision):
+	//	default:
+	//		processTransferringFail(r, c.ticker)
+	//	}
 
 	case *requests.BlockHashBroadcast:
 		select {
@@ -448,9 +607,16 @@ func (c *Core) processIncomingResponse(r responses.Response) (err error) {
 			processTransferringFail(r, c.blocksProducer)
 		}
 
-	case *responses.ChainTop:
+	case *responses.CandidateDigestReject:
 		select {
-		case c.composer.IncomingResponsesChainTop <- r.(*responses.ChainTop):
+		case c.blocksProducer.IncomingResponsesCandidateDigestReject <- r.(*responses.CandidateDigestReject):
+		default:
+			processTransferringFail(r, c.blocksProducer)
+		}
+
+	case *responses.ChainInfo:
+		select {
+		case c.composer.IncomingResponses.ChainInfo <- r.(*responses.ChainInfo):
 		default:
 			processTransferringFail(r, c.blocksProducer)
 		}

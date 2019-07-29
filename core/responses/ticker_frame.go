@@ -1,7 +1,8 @@
 package responses
 
 import (
-	"geo-observers-blockchain/core/network/communicator/observers/requests"
+	"geo-observers-blockchain/core/common"
+	"geo-observers-blockchain/core/requests"
 	"geo-observers-blockchain/core/utils"
 	"time"
 )
@@ -29,19 +30,32 @@ func (r *TimeFrame) Request() requests.Request {
 	return r.request
 }
 
-func (r *TimeFrame) MarshalBinary() ([]byte, error) {
+func (r *TimeFrame) MarshalBinary() (data []byte, err error) {
+	responseData, err := r.response.MarshalBinary()
+	if err != nil {
+		return
+	}
+
 	return utils.ChainByteSlices(
+		responseData,
 		utils.MarshalUint16(r.FrameIndex),
 		utils.MarshalUint64(r.NanosecondsLeft)), nil
 }
 
 func (r *TimeFrame) UnmarshalBinary(data []byte) (err error) {
-	r.FrameIndex, err = utils.UnmarshalUint16(data[0:2])
+	r.response = &response{}
+	err = r.response.UnmarshalBinary(data[:ResponseDefaultBytesLength])
 	if err != nil {
 		return
 	}
 
-	r.NanosecondsLeft, err = utils.UnmarshalUint64(data[2:10])
+	r.FrameIndex, err = utils.UnmarshalUint16(data[ResponseDefaultBytesLength : ResponseDefaultBytesLength+2])
+	if err != nil {
+		return
+	}
+
+	const nanosecondsOffset = ResponseDefaultBytesLength + common.Uint16ByteSize
+	r.NanosecondsLeft, err = utils.UnmarshalUint64(data[nanosecondsOffset : nanosecondsOffset+common.Uint64ByteSize])
 	if err != nil {
 		return
 	}

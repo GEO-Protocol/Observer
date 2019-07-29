@@ -11,23 +11,23 @@ import (
 	"time"
 )
 
-func (p *Producer) reportGEORequestError(r common.RequestWithResponse, err error) error {
+func (p *Producer) reportGEORequestError(r common.RequestWithResponse, err error) errors.E {
 	select {
 	case r.ErrorsChannel() <- err:
 	default:
 	}
 
-	return err
+	return errors.AppendStackTrace(err)
 }
 
-func (p *Producer) processGEOLastBlockHeightRequest(req *geoRequests.LastBlockNumber) (err error) {
+func (p *Producer) processGEOLastBlockHeightRequest(req *geoRequests.LastBlockNumber) (e errors.E) {
 	req.ResponseChannel() <- &geoResponses.LastBlockHeight{
 		Height: p.chain.Height(),
 	}
 	return
 }
 
-func (p *Producer) processGEOClaimIsPresentRequest(req *geoRequests.ClaimIsPresent) (err error) {
+func (p *Producer) processGEOClaimIsPresentRequest(req *geoRequests.ClaimIsPresent) (e errors.E) {
 	resultsChannel, errorsChannel := p.poolClaims.ContainsInstance(req.TxID)
 
 	presentInPool := false
@@ -55,7 +55,7 @@ func (p *Producer) processGEOClaimIsPresentRequest(req *geoRequests.ClaimIsPrese
 	return
 }
 
-func (p *Producer) processGEOTSLIsPresentRequest(req *geoRequests.TSLIsPresent) (err error) {
+func (p *Producer) processGEOTSLIsPresentRequest(req *geoRequests.TSLIsPresent) (e errors.E) {
 	resultsChannel, errorsChannel := p.poolTSLs.ContainsInstance(req.TxID)
 
 	presentInPool := false
@@ -83,7 +83,7 @@ func (p *Producer) processGEOTSLIsPresentRequest(req *geoRequests.TSLIsPresent) 
 	return
 }
 
-func (p *Producer) processGEOTSLGetRequest(req *geoRequests.TSLGet) (err error) {
+func (p *Producer) processGEOTSLGetRequest(req *geoRequests.TSLGet) (e errors.E) {
 	sendResponse := func(tsl *geo.TSL) {
 		req.ResponseChannel() <- &geoResponses.TSLGet{
 			TSL:       nil,
@@ -109,13 +109,14 @@ func (p *Producer) processGEOTSLGetRequest(req *geoRequests.TSLGet) (err error) 
 	return
 }
 
-func (p *Producer) processGEOTxStatesRequest(req *geoRequests.TxsStates) (err error) {
+func (p *Producer) processGEOTxStatesRequest(req *geoRequests.TxsStates) (e errors.E) {
 	if req == nil || len(req.TxIDs.At) == 0 {
-		return errors.InvalidParameter
+		// todo: replace error
+		return errors.AppendStackTrace(errors.InvalidParameter)
 	}
 	response := geoResponses.NewTxStates(p.chain.Height())
 
-	appendClaimInPoolState := func(TxID *transactions.TxID) (err error) {
+	appendClaimInPoolState := func(TxID *transactions.TxID) (e errors.E) {
 		resultsChannel, errorsChannel := p.poolClaims.ContainsInstance(TxID)
 		select {
 		case isPresent := <-resultsChannel:
@@ -148,13 +149,12 @@ func (p *Producer) processGEOTxStatesRequest(req *geoRequests.TxsStates) (err er
 			return p.reportGEORequestError(req.RequestWithResponse, err)
 
 		case <-time.After(time.Second * 2):
-			err = errors.TimeoutFired
-			return p.reportGEORequestError(req.RequestWithResponse, err)
+			return p.reportGEORequestError(req.RequestWithResponse, errors.TimeoutFired)
 		}
 	}
 
-	appendClaimState := func(TxID *transactions.TxID) (err error) {
-		_, err = p.chain.GetClaim(TxID)
+	appendClaimState := func(TxID *transactions.TxID) (e errors.E) {
+		_, err := p.chain.GetClaim(TxID)
 		if err == errors.NotFound {
 			return appendClaimInPoolState(TxID)
 		}
@@ -175,8 +175,8 @@ func (p *Producer) processGEOTxStatesRequest(req *geoRequests.TxsStates) (err er
 		return
 	}
 
-	appendTxState := func(TxID *transactions.TxID) (err error) {
-		_, err = p.chain.GetTSL(TxID)
+	appendTxState := func(TxID *transactions.TxID) (e errors.E) {
+		_, err := p.chain.GetTSL(TxID)
 		if err == errors.NotFound {
 			return appendClaimState(TxID)
 		}
@@ -200,17 +200,16 @@ func (p *Producer) processGEOTxStatesRequest(req *geoRequests.TxsStates) (err er
 	for _, TxID := range req.TxIDs.At {
 		fmt.Println("------", TxID.Bytes)
 
-		err = appendTxState(TxID)
+		err := appendTxState(TxID)
 		if err != nil {
-			return p.reportGEORequestError(req.RequestWithResponse, err)
+			return p.reportGEORequestError(req.RequestWithResponse, err.Error())
 		}
 	}
 
 	select {
 	case req.ResponseChannel() <- response:
 	default:
-		err = errors.ChannelTransferringFailed
-		return p.reportGEORequestError(req.RequestWithResponse, err)
+		return p.reportGEORequestError(req.RequestWithResponse, errors.ChannelTransferringFailed)
 	}
 
 	return

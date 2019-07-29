@@ -58,7 +58,7 @@ func (r *Reporter) GetCurrentObserverIndex() (uint16, error) {
 // todo: sort observers in strict order!
 func (r *Reporter) temptStaticConfiguration() *Configuration {
 	if configuration == nil {
-		//if settings.Conf.Debug {
+		//if settings.ObserversConfiguration.Debug {
 		//	observers := make([]*Observer, 0, 4)
 		//	observers = append(observers, NewObserver("127.0.0.1", 3000, r.tempLoadPublicKey(0)))
 		//	observers = append(observers, NewObserver("127.0.0.1", 3001, r.tempLoadPublicKey(1)))
@@ -69,10 +69,10 @@ func (r *Reporter) temptStaticConfiguration() *Configuration {
 		//
 		//} else {
 		observers := make([]*Observer, 0, 4)
-		observers = append(observers, NewObserver("68.183.146.232", 3000, r.tempLoadPublicKey(0)))
-		observers = append(observers, NewObserver("46.101.51.158", 3000, r.tempLoadPublicKey(1)))
-		observers = append(observers, NewObserver("206.189.84.116", 3000, r.tempLoadPublicKey(2)))
-		observers = append(observers, NewObserver("159.89.115.33", 3000, r.tempLoadPublicKey(3)))
+		observers = append(observers, NewObserver("127.0.0.1", 3000, r.tempLoadPublicKey(0)))
+		observers = append(observers, NewObserver("127.0.0.1", 3001, r.tempLoadPublicKey(1)))
+		observers = append(observers, NewObserver("127.0.0.1", 3002, r.tempLoadPublicKey(2)))
+		observers = append(observers, NewObserver("127.0.0.1", 3003, r.tempLoadPublicKey(3)))
 
 		configuration = NewConfiguration(0, r.sortObservers(observers))
 		//}

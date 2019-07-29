@@ -58,7 +58,7 @@ func (r *PoolInstanceBroadcast) MarshalBinary() (data []byte, err error) {
 }
 
 func (r *PoolInstanceBroadcast) UnmarshalBinary(data []byte) (err error) {
-	err = r.request.UnmarshalBinary(data[1:3])
+	err = r.request.UnmarshalBinary(data[1:RequestDefaultBytesLength])
 	if err != nil {
 		return
 	}
@@ -67,13 +67,13 @@ func (r *PoolInstanceBroadcast) UnmarshalBinary(data []byte) (err error) {
 	case constants.DataTypeRequestTSLBroadcast:
 		{
 			r.Instance = geo.NewTSL()
-			err = r.Instance.(*geo.TSL).UnmarshalBinary(data[3:])
+			err = r.Instance.(*geo.TSL).UnmarshalBinary(data[RequestDefaultBytesLength+1:])
 		}
 
 	case constants.DataTypeRequestClaimBroadcast:
 		{
 			r.Instance = geo.NewClaim()
-			err = r.Instance.(*geo.Claim).UnmarshalBinary(data[3:])
+			err = r.Instance.(*geo.Claim).UnmarshalBinary(data[RequestDefaultBytesLength+1:])
 		}
 
 	default:

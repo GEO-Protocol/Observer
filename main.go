@@ -16,6 +16,7 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// todo: configure logger to log to the stdout
 	logfile := logger.InitLogger()
 	defer logfile.Close()
 
