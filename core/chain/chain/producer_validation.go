@@ -76,7 +76,7 @@ func (p *Producer) processValidationFlow(tick *ticker.EventTimeFrameStarted) (e 
 			e = p.processGEOTxStatesRequest(reqTxStates)
 
 		case <-time.After(p.blockValidationStageTimeLeft(tick)):
-
+			p.log().Trace("time after")
 			// It is very suspicious, no block digest was received.
 			if p.validationFlowStates.BlockDigestApproved == false {
 				return errors.AppendStackTrace(errors.ValidationFailed)

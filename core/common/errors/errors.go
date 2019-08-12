@@ -82,7 +82,7 @@ var (
 
 	// Common
 	SuspiciousOperation = errors.New("suspicious operation")
-	ExpectationFailed   = errors.New("expecteation failed")
+	ExpectationFailed   = errors.New("expectation failed")
 	NoConsensus         = errors.New("no consensus")
 	ValidationFailed    = errors.New("validation failed")
 	TimeoutFired        = errors.New("timeout fired ")

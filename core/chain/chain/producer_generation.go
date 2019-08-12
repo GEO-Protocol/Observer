@@ -38,6 +38,7 @@ func (p *Producer) processBlockGenerationFlow(tick *ticker.EventTimeFrameStarted
 	if e != nil {
 		return
 	}
+	p.log().Trace("Candidate generated")
 
 	p.nextBlock = &block.Signed{
 		Body:       candidate,
@@ -49,6 +50,7 @@ func (p *Producer) processBlockGenerationFlow(tick *ticker.EventTimeFrameStarted
 	if e != nil {
 		return e
 	}
+	p.log().Trace("block signed")
 
 	p.nextBlock.Signatures.At[tick.ObserversConfiguration.CurrentObserverIndex] = sig
 
@@ -56,13 +58,14 @@ func (p *Producer) processBlockGenerationFlow(tick *ticker.EventTimeFrameStarted
 	if e != nil {
 		return
 	}
+	p.log().Trace("candidate distributed")
 
 	return p.collectResponsesAndProcessConsensus(tick, tick.ObserversConfiguration)
 }
 
 func (p *Producer) generateBlockCandidateFromPool(
 	conf *external.Configuration) (candidate *block.Body, e errors.E) {
-
+	p.log().Trace("generateBlockCandidateFromPool")
 	// todo: move to separate method
 	getBlockReadyTSLs := func() (TSLs *geo.TSLs, e errors.E) {
 		channel, errorsChannel := p.poolTSLs.BlockReadyInstances()
@@ -185,6 +188,7 @@ func (p *Producer) generateBlockCandidate(
 	TLSs *geo.TSLs, claims *geo.Claims, conf *external.Configuration,
 	authorObserverPosition uint16) (candidate *block.Body, e errors.E) {
 
+	p.log().Trace("generateBlockCandidate")
 	if p.hasProposedBlock() {
 		e = errors.AppendStackTrace(errors.AttemptToGenerateRedundantBlock)
 		return
@@ -274,6 +278,7 @@ func (p *Producer) approveBlockCandidateAndPropagateSignature(
 func (p *Producer) collectResponsesAndProcessConsensus(
 	tick *ticker.EventTimeFrameStarted, conf *external.Configuration) (e errors.E) {
 
+	p.log().Trace("collectResponsesAndProcessConsensus")
 	if p.nextBlock == nil {
 		return errors.AppendStackTrace(errors.NotFound)
 	}
@@ -282,9 +287,11 @@ func (p *Producer) collectResponsesAndProcessConsensus(
 		select {
 
 		case responseApprove := <-p.IncomingResponsesCandidateDigestApprove:
+			p.log().Trace("IncomingResponsesCandidateDigestApprove")
 			e = p.processIncomingCandidateDigestApprove(responseApprove, conf)
 
 		case responseReject := <-p.IncomingResponsesCandidateDigestReject:
+			p.log().Trace("IncomingResponsesCandidateDigestReject")
 			e = p.processIncomingCandidateDigestReject(responseReject, conf)
 
 		//// Block digest mighte arrive aafter sync // todo: comment better
@@ -299,28 +306,37 @@ func (p *Producer) collectResponsesAndProcessConsensus(
 		// todo: process case when configuration changed, to be able to interrupt flow and react ASAP
 
 		case reqChainTop := <-p.IncomingRequestsChainTop:
+			p.log().Trace("IncomingRequestsChainTop")
 			e = p.processChainTopRequest(reqChainTop)
 
 		case reqLastBlockHeight := <-p.GEORequestsLastBlockHeight:
+			p.log().Trace("GEORequestsLastBlockHeight")
 			e = p.processGEOLastBlockHeightRequest(reqLastBlockHeight)
 
 		case reqClaimIsPresent := <-p.GEORequestsClaimIsPresent:
+			p.log().Trace("GEORequestsClaimIsPresent")
 			e = p.processGEOClaimIsPresentRequest(reqClaimIsPresent)
 
 		case reqTSLIsPresent := <-p.GEORequestsTSLIsPresent:
+			p.log().Trace("GEORequestsTSLIsPresent")
 			e = p.processGEOTSLIsPresentRequest(reqTSLIsPresent)
 
 		case reqTSLGet := <-p.GEORequestsTSLGet:
+			p.log().Trace("GEORequestsTSLGet")
 			e = p.processGEOTSLGetRequest(reqTSLGet)
 
 		case reqTxStates := <-p.GEORequestsTxStates:
+			p.log().Trace("GEORequestsTxStates")
 			e = p.processGEOTxStatesRequest(reqTxStates)
 
 		case <-time.After(p.blockGenerationStageTimeLeft(tick)):
+			p.log().Trace("After")
 			if p.nextBlock.Signatures.IsMajorityApprovesCollected() {
+				p.log().Trace("processConsensusAchieved")
 				return p.processConsensusAchieved(tick)
 
 			} else {
+				p.log().Trace("processNoConsensus")
 				return p.processNoConsensus()
 			}
 		}

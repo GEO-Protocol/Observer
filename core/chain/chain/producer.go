@@ -134,6 +134,7 @@ func (p *Producer) DropEnqueuedIncomingRequestsAndResponses() {
 }
 
 func (p *Producer) Run(chain *Chain) (err error) {
+	p.log().Trace("!!!!producer Run!!!!")
 	p.chain = chain
 	p.nextBlock = nil
 
@@ -167,18 +168,23 @@ func (p *Producer) Run(chain *Chain) (err error) {
 		// todo: add case when observers configuration has changed
 
 		case tick := <-p.IncomingEventTimeFrameEnded:
+			p.log().Trace("IncomingEventTimeFrameEnded")
 			roundError := p.processTick(tick)
 			if roundError != nil {
+				p.log().Trace("roundError not nil")
 				// todo: move this into the separate function
 
 				if roundError.Error() == errors.BlockValidationStageFailed {
+					p.log().Trace("round error BlockValidationStageFailed")
 					const maxAmountOfTimeFrameCollisionsInARow = 2
 					if len(timeFramesThatCouldBeInvalid) < maxAmountOfTimeFrameCollisionsInARow {
+						p.log().Trace("< maxAmountOfTimeFrameCollisionsInARow")
 						// Potential time frame collision is detected and should be recorded.
 						timeFramesThatCouldBeInvalid[tick.Index] = true
 						continue
 
 					} else {
+						p.log().Trace("not < maxAmountOfTimeFrameCollisionsInARow")
 						// Amount of potential time frame collisions is greater than allowed amount.
 						// It is very probable, that current observer's ticker is not synchronised
 						// with the rest of network.
@@ -189,6 +195,8 @@ func (p *Producer) Run(chain *Chain) (err error) {
 					}
 
 				} else {
+
+					p.log().Trace("round error not BlockValidationStageFailed")
 					// Default error handler.
 					// In case if unexpected error occurred - it must be reported to the core level.
 					// todo: temporary message
@@ -196,11 +204,14 @@ func (p *Producer) Run(chain *Chain) (err error) {
 						p.log().Trace("CLEARED!")
 					}
 					timeFramesThatCouldBeInvalid = make(map[uint16]bool)
+					p.log().Trace("return round error data ", roundError.Error())
+					p.log().Trace("return round error ", roundError)
 
 					return roundError.Error()
 				}
 
 			} else {
+				p.log().Trace("roundError nil")
 				// todo: temporary message
 				if len(timeFramesThatCouldBeInvalid) > 0 {
 					p.log().Trace("CLEARED!")
@@ -218,21 +229,27 @@ func (p *Producer) Run(chain *Chain) (err error) {
 		// todo: process case when configuration changed, to be able to interrupt flow and react ASAP
 
 		case reqChainTop := <-p.IncomingRequestsChainTop:
+			p.log().Trace("IncomingRequestsChainTop", nil)
 			e = p.processChainTopRequest(reqChainTop)
 
 		case reqLastBlockHeight := <-p.GEORequestsLastBlockHeight:
+			p.log().Trace("GEORequestsLastBlockHeight", nil)
 			e = p.processGEOLastBlockHeightRequest(reqLastBlockHeight)
 
 		case reqClaimIsPresent := <-p.GEORequestsClaimIsPresent:
+			p.log().Trace("GEORequestsClaimIsPresent", nil)
 			e = p.processGEOClaimIsPresentRequest(reqClaimIsPresent)
 
 		case reqTSLIsPresent := <-p.GEORequestsTSLIsPresent:
+			p.log().Trace("GEORequestsTSLIsPresent", nil)
 			e = p.processGEOTSLIsPresentRequest(reqTSLIsPresent)
 
 		case reqTSLGet := <-p.GEORequestsTSLGet:
+			p.log().Trace("GEORequestsTSLGet", nil)
 			e = p.processGEOTSLGetRequest(reqTSLGet)
 
 		case reqTxStates := <-p.GEORequestsTxStates:
+			p.log().Trace("GEORequestsTxStates", nil)
 			e = p.processGEOTxStatesRequest(reqTxStates)
 
 		}

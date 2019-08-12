@@ -181,6 +181,7 @@ func (c *Core) processMainFlow(globalErrorsFlow chan error) {
 	for {
 		err := c.blocksProducer.Run(c.blockchain)
 		if err != nil {
+			c.log().Trace("Error after producer run ", err)
 			if err == errors.Collision || err == errors.SyncNeeded {
 				c.log().Trace("Collision detected or sync. request occurred. " +
 					"Ticker and chain synchronisation started")
@@ -209,6 +210,7 @@ func (c *Core) processMainFlow(globalErrorsFlow chan error) {
 				c.blocksProducer.DropEnqueuedIncomingRequestsAndResponses()
 
 			} else {
+				c.log().Trace("before panic ", err)
 				panic(err)
 			}
 		}
